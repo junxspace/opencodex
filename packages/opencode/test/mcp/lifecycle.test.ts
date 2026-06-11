@@ -1160,3 +1160,115 @@ it.instance(
     ),
   { config: { mcp: {} } },
 )
+
+// ========================================================================
+// Test: lazy loading, include_tools, profiles
+// ========================================================================
+
+it.instance(
+  "lazy server starts idle without connecting",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        const countBefore = clientCreateCount
+        const status = yield* mcp.status()
+        expect(status["lazy-server"]?.status).toBe("idle")
+        expect(clientCreateCount).toBe(countBefore)
+        expect(Object.keys(yield* mcp.tools())).toEqual(["mcp_connect"])
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "lazy-server": {
+          type: "local",
+          command: ["echo", "test"],
+          lazy: true,
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "connect activates lazy server tools",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "lazy-server"
+        const serverState = getOrCreateClientState("lazy-server")
+        serverState.tools = [
+          { name: "lazy_tool", description: "lazy tool", inputSchema: { type: "object", properties: {} } },
+        ]
+
+        expect((yield* mcp.status())["lazy-server"]?.status).toBe("idle")
+        yield* mcp.connect("lazy-server")
+        expect((yield* mcp.status())["lazy-server"]?.status).toBe("connected")
+        expect(Object.keys(yield* mcp.tools())).toEqual(["lazy-server_lazy_tool"])
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "lazy-server": {
+          type: "local",
+          command: ["echo", "test"],
+          lazy: true,
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "include_tools false keeps server connected but omits schemas",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        expect((yield* mcp.status())["hidden-tools"]?.status).toBe("connected")
+        expect(yield* mcp.tools()).toEqual({})
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "hidden-tools": {
+          type: "local",
+          command: ["echo", "test"],
+          include_tools: false,
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "mcp_profile limits startup servers",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        const status = yield* mcp.status()
+        expect(status["coding-server"]?.status).toBe("connected")
+        expect(status["browser-server"]?.status).toBe("disabled")
+      }),
+    ),
+  {
+    config: {
+      mcp_profile: "coding",
+      mcp_profiles: {
+        coding: ["coding-server"],
+        browser: ["browser-server"],
+      },
+      mcp: {
+        "coding-server": {
+          type: "local",
+          command: ["echo", "coding"],
+        },
+        "browser-server": {
+          type: "local",
+          command: ["echo", "browser"],
+        },
+      },
+    },
+  },
+)

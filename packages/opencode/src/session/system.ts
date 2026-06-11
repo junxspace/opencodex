@@ -21,6 +21,7 @@ import { Location } from "@opencode-ai/core/location"
 import { LocationServiceMap } from "@opencode-ai/core/location-layer"
 import { PluginBoot } from "@opencode-ai/core/plugin/boot"
 import { Reference } from "@opencode-ai/core/reference"
+import { Config } from "@/config/config"
 
 export function provider(model: Provider.Model) {
   if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -50,6 +51,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const skill = yield* Skill.Service
     const locations = yield* LocationServiceMap
+    const config = yield* Config.Service
 
     return Service.of({
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
@@ -94,24 +96,30 @@ export const layer = Layer.effect(
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
+        const cfg = yield* config.get()
+        const mode = cfg.skills?.catalog ?? "compact"
+        if (mode === "none") return
+
         const list = yield* skill.available(agent)
 
         return [
           "Skills provide specialized instructions and workflows for specific tasks.",
           "Use the skill tool to load a skill when a task matches its description.",
-          // the agents seem to ingest the information about skills a bit better if we present a more verbose
-          // version of them here and a less verbose version in tool description, rather than vice versa.
-          Skill.fmt(list, { verbose: true }),
+          Skill.fmt(list, { verbose: mode === "verbose" }),
         ].join("\n")
       }),
     })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Skill.defaultLayer), Layer.provide(LocationServiceMap.layer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Skill.defaultLayer),
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(LocationServiceMap.layer),
+)
 
 const locationServiceMapNode = LayerNode.make(LocationServiceMap.layer, [])
 
-export const node = LayerNode.make(layer, [Skill.node, locationServiceMapNode])
+export const node = LayerNode.make(layer, [Skill.node, Config.node, locationServiceMapNode])
 
 export * as SystemPrompt from "./system"

@@ -5,6 +5,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
 import { SystemPrompt } from "../../src/session/system"
+import { Config } from "../../src/config/config"
 import { LocationServiceMap } from "@opencode-ai/core/location-layer"
 import { testEffect } from "../lib/effect"
 
@@ -43,6 +44,7 @@ const build: Agent.Info = {
 
 const it = testEffect(
   SystemPrompt.layer.pipe(
+    Layer.provide(Config.defaultLayer),
     Layer.provide(LocationServiceMap.layer),
     Layer.provide(
       Layer.succeed(
@@ -64,23 +66,38 @@ const it = testEffect(
 )
 
 describe("session.system", () => {
-  it.effect("skills output is sorted by name and stable across calls", () =>
+  it.instance("skills output uses compact catalog by default", () =>
     Effect.gen(function* () {
       const prompt = yield* SystemPrompt.Service
-      const first = yield* prompt.skills(build)
-      const second = yield* prompt.skills(build)
-      const output = first ?? (yield* Effect.fail(new NamedError.Unknown({ message: "missing skills output" })))
+      const output = yield* prompt.skills(build)
 
-      expect(first).toBe(second)
-
-      const alpha = output.indexOf("<name>alpha-skill</name>")
-      const middle = output.indexOf("<name>middle-skill</name>")
-      const zeta = output.indexOf("<name>zeta-skill</name>")
-
-      expect(alpha).toBeGreaterThan(-1)
-      expect(middle).toBeGreaterThan(alpha)
-      expect(zeta).toBeGreaterThan(middle)
+      expect(output).toContain("**alpha-skill**")
+      expect(output).toContain("**middle-skill**")
+      expect(output).toContain("**zeta-skill**")
+      expect(output?.indexOf("**alpha-skill**") ?? -1).toBeLessThan(output?.indexOf("**middle-skill**") ?? 0)
+      expect(output?.indexOf("**middle-skill**") ?? -1).toBeLessThan(output?.indexOf("**zeta-skill**") ?? 0)
       expect(output).not.toContain("manual-skill")
+      expect(output).not.toContain("file://")
     }),
+  )
+
+  it.instance(
+    "skills output can use verbose catalog",
+    () =>
+      Effect.gen(function* () {
+        const prompt = yield* SystemPrompt.Service
+        const output = yield* prompt.skills(build)
+        const text = output ?? (yield* Effect.fail(new NamedError.Unknown({ message: "missing skills output" })))
+
+        const alpha = text.indexOf("<name>alpha-skill</name>")
+        const middle = text.indexOf("<name>middle-skill</name>")
+        const zeta = text.indexOf("<name>zeta-skill</name>")
+
+        expect(alpha).toBeGreaterThan(-1)
+        expect(middle).toBeGreaterThan(alpha)
+        expect(zeta).toBeGreaterThan(middle)
+        expect(text).not.toContain("manual-skill")
+      }),
+    { config: { skills: { catalog: "verbose" } } },
   )
 })

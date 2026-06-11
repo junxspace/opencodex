@@ -1,5 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { type Tool } from "ai"
+import { type Tool, dynamicTool, jsonSchema } from "ai"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -69,6 +69,9 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP
 
 type MCPClient = Client
 
+const StatusIdle = Schema.Struct({ status: Schema.Literal("idle") }).annotate({
+  identifier: "MCPStatusIdle",
+})
 const StatusConnected = Schema.Struct({ status: Schema.Literal("connected") }).annotate({
   identifier: "MCPStatusConnected",
 })
@@ -88,6 +91,7 @@ const StatusNeedsClientRegistration = Schema.Struct({
 
 export const Status = Schema.Union([
   StatusConnected,
+  StatusIdle,
   StatusDisabled,
   StatusFailed,
   StatusNeedsAuth,
@@ -106,6 +110,22 @@ type McpEntry = NonNullable<ConfigV1.Info["mcp"]>[string]
 
 function isMcpConfigured(entry: McpEntry): entry is ConfigMCPV1.Info {
   return typeof entry === "object" && entry !== null && "type" in entry
+}
+
+function mcpInProfile(name: string, cfg: ConfigV1.Info) {
+  const profile = cfg.mcp_profile
+  if (!profile) return true
+  const allowed = cfg.mcp_profiles?.[profile]
+  if (!allowed) return true
+  return allowed.includes(name)
+}
+
+function includesTools(mcp: ConfigMCPV1.Info) {
+  return mcp.include_tools !== false
+}
+
+function isLazy(mcp: ConfigMCPV1.Info) {
+  return mcp.lazy === true
 }
 
 function remoteURL(value: string) {
@@ -457,6 +477,16 @@ export const layer = Layer.effect(
                 return
               }
 
+              if (!mcpInProfile(key, cfg)) {
+                s.status[key] = { status: "disabled" }
+                return
+              }
+
+              if (isLazy(mcp)) {
+                s.status[key] = { status: "idle" }
+                return
+              }
+
               const result = yield* create(key, mcp)
               s.status[key] = result.status
               if (result.mcpClient) {
@@ -565,15 +595,15 @@ export const layer = Layer.effect(
 
     const connect = Effect.fn("MCP.connect")(function* (name: string) {
       const mcp = yield* requireMcpConfig(name)
-      yield* createAndStore(name, { ...mcp, enabled: true })
+      yield* createAndStore(name, { ...mcp, enabled: true, lazy: false })
     })
 
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
-      yield* requireMcpConfig(name)
+      const mcp = yield* requireMcpConfig(name)
       const s = yield* InstanceState.get(state)
       yield* closeClient(s, name)
       delete s.clients[name]
-      s.status[name] = { status: "disabled" }
+      s.status[name] = isLazy(mcp) ? { status: "idle" } : { status: "disabled" }
     })
 
     function requestTimeout(s: State, name: string, configured: McpEntry | undefined, fallback?: number) {
@@ -584,6 +614,7 @@ export const layer = Layer.effect(
     const tools = Effect.fn("MCP.tools")(function* () {
       const result: Record<string, Tool> = {}
       const s = yield* InstanceState.get(state)
+      const bridge = yield* EffectBridge.make()
 
       const cfg = yield* cfgSvc.get()
       const config = cfg.mcp ?? {}
@@ -592,6 +623,7 @@ export const layer = Layer.effect(
       for (const [clientName, client] of Object.entries(s.clients)) {
         if (s.status[clientName]?.status !== "connected") continue
         const mcpConfig = config[clientName]
+        if (mcpConfig && isMcpConfigured(mcpConfig) && !includesTools(mcpConfig)) continue
         const listed = s.defs[clientName]
         if (!listed) {
           yield* Effect.logWarning("missing cached tools for connected server", { clientName })
@@ -603,6 +635,48 @@ export const layer = Layer.effect(
           result[key] = McpCatalog.convertTool(mcpTool, client, timeout)
         }
       }
+
+      const idle = Object.keys(s.status)
+        .filter((name) => s.status[name]?.status === "idle")
+        .toSorted((a, b) => a.localeCompare(b))
+      if (idle.length === 0) return result
+
+      result.mcp_connect = dynamicTool({
+        description: [
+          "Connect a lazy MCP server so its tools become available on the next turn.",
+          `Idle servers: ${idle.join(", ")}.`,
+        ].join(" "),
+        inputSchema: jsonSchema({
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "MCP server name to connect",
+            },
+          },
+          required: ["name"],
+          additionalProperties: false,
+        }),
+        execute: (args) =>
+          bridge.promise(
+            Effect.gen(function* () {
+              const name = typeof args === "object" && args !== null && "name" in args ? String(args.name) : ""
+              if (!name) throw new Error("Missing MCP server name")
+              yield* connect(name)
+              const connected = yield* InstanceState.get(state)
+              const toolCount = connected.defs[name]?.length ?? 0
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: `Connected MCP server "${name}". ${toolCount} tool(s) will be available on the next turn.`,
+                  },
+                ],
+              }
+            }),
+          ),
+      })
+
       return result
     })
 

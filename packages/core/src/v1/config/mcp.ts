@@ -14,6 +14,14 @@ export const Local = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Enable or disable the MCP server on startup",
   }),
+  lazy: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Defer connecting this MCP server until it is explicitly connected via mcp_connect, opencode mcp connect, or /mcp connect.",
+  }),
+  include_tools: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "When false, keep the server connected but omit its tool schemas from LLM requests. Defaults to true.",
+  }),
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 5000 (5 seconds) if not specified.",
   }),
@@ -43,6 +51,14 @@ export const Remote = Schema.Struct({
   url: Schema.String.annotate({ description: "URL of the remote MCP server" }),
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Enable or disable the MCP server on startup",
+  }),
+  lazy: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Defer connecting this MCP server until it is explicitly connected via mcp_connect, opencode mcp connect, or /mcp connect.",
+  }),
+  include_tools: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "When false, keep the server connected but omit its tool schemas from LLM requests. Defaults to true.",
   }),
   headers: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
     description: "Headers to send with the request",

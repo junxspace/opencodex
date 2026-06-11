@@ -106,6 +106,7 @@ export const layer = Layer.effect(
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
+    const skillService = yield* Skill.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -264,6 +265,17 @@ export const layer = Layer.effect(
       return ["Available agent types and the tools they have access to:", description].join("\n")
     })
 
+    const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (agent: Agent.Info) {
+      if (Permission.disabled(["skill"], agent.permission).has("skill")) return undefined
+
+      const info = yield* config.get()
+      const mode = info.skills?.catalog ?? "compact"
+      if (mode !== "none") return undefined
+
+      const list = yield* skillService.available(agent)
+      return Skill.fmt(list, { verbose: false })
+    })
+
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
       const filtered = (yield* all()).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
@@ -293,7 +305,11 @@ export const layer = Layer.effect(
               : undefined
           return {
             id: tool.id,
-            description: [output.description, tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined]
+            description: [
+              output.description,
+              tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
+              tool.id === "skill" ? yield* describeSkill(input.agent) : undefined,
+            ]
               .filter(Boolean)
               .join("\n"),
             parameters: output.parameters,
