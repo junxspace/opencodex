@@ -2,6 +2,7 @@ import type { Argv } from "yargs"
 import * as prompts from "@clack/prompts"
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
+import { resolveCliStyle, type CliStyle } from "../theme"
 import { UI } from "../ui"
 import { Config } from "@/config/config"
 import { InstanceRef } from "@/effect/instance-ref"
@@ -53,6 +54,7 @@ type Args = {
   output?: (text: string) => void
   error?: (text: string) => void
   exit?: (code: number) => void
+  style?: CliStyle
 }
 
 type CliArgs = {
@@ -103,9 +105,44 @@ export function parseStatus(text: string): Status {
   }
 }
 
-function format(title: string, files: string[]) {
-  if (files.length === 0) return `${title}:\n  none`
-  return `${title}:\n${files.map((file) => `  ${file}`).join("\n")}`
+function commitUi(style: CliStyle) {
+  const styled = (text: string) => text + style.TEXT_NORMAL
+
+  return {
+    styled,
+    statusSection(title: string, files: string[]) {
+      const header = styled(`${style.TEXT_DIM_BOLD}${title}${style.TEXT_NORMAL}`)
+      if (files.length === 0) return `${header}\n${styled(`${style.TEXT_DIM}  none`)}`
+      const items = files.map((file) => {
+        const path = isLockFile(file) ? `${style.TEXT_DIM}  ${file}` : `  ${file}`
+        return styled(path)
+      })
+      return `${header}\n${items.join("\n")}`
+    },
+    commitMessageBlock(message: string) {
+      const [subject = "", ...body] = message.trim().split("\n")
+      return [
+        styled(`${style.TEXT_DIM_BOLD}Generated commit message${style.TEXT_NORMAL}`),
+        styled(`${style.TEXT_SUCCESS_BOLD}${subject}${style.TEXT_NORMAL}`),
+        ...body
+          .filter((line) => line.trim())
+          .map((line) => styled(`${style.TEXT_DIM}  ${line}${style.TEXT_NORMAL}`)),
+      ].join("\n")
+    },
+    gitOutput(text: string) {
+      return text
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => styled(`${style.TEXT_DIM}${line}${style.TEXT_NORMAL}`))
+        .join("\n")
+    },
+    success(text: string) {
+      return styled(`${style.TEXT_SUCCESS_BOLD}${text}${style.TEXT_NORMAL}`)
+    },
+    info(text: string) {
+      return styled(`${style.TEXT_DIM}${text}${style.TEXT_NORMAL}`)
+    },
+  }
 }
 
 function empty(status: Status) {
@@ -175,10 +212,13 @@ function runPush(
   out: (text: string) => void,
   error: (text: string) => void,
   exit: (code: number) => void,
+  ui: ReturnType<typeof commitUi>,
 ) {
   const result = run(["push"], root)
   if (!check(result, error, exit)) return false
-  out(result.stdout.trim() || "Pushed")
+  const text = result.stdout.trim()
+  if (text) out(ui.gitOutput(text))
+  out(ui.success("Pushed"))
   return true
 }
 
@@ -248,22 +288,23 @@ export async function handle(args: Args) {
   const out = args.output ?? ((text: string) => process.stdout.write(text + "\n"))
   const error = args.error ?? UI.error
   const exit = args.exit ?? ((code: number) => (process.exitCode = code))
+  const ui = commitUi(args.style ?? (await resolveCliStyle({ directory: root })))
   const statusResult = run(["status", "--porcelain"], root)
   if (!check(statusResult, error, exit)) return
 
   const status = parseStatus(statusResult.stdout)
-  out(format("Staged changes", status.staged))
-  out(format("Unstaged changes", status.unstaged))
-  out(format("Untracked files", status.untracked))
+  out(ui.statusSection("Staged changes", status.staged))
+  out(ui.statusSection("Unstaged changes", status.unstaged))
+  out(ui.statusSection("Untracked files", status.untracked))
 
   if (empty(status)) {
-    out("No changes found")
+    out(ui.info("No changes found"))
     const action = args.yes ? "push" : await (args.selectPush ?? selectPush)()
     if (action === "cancel") {
-      out("Cancelled")
+      out(ui.info("Cancelled"))
       return
     }
-    if (!runPush(run, root, out, error, exit)) return
+    if (!runPush(run, root, out, error, exit, ui)) return
     return
   }
 
@@ -342,17 +383,20 @@ export async function handle(args: Args) {
         return
       }
 
-      if (args.yes || args.dryRun) out("Generated commit message:\n\n" + msg)
+      if (args.yes || args.dryRun) {
+        out("")
+        out(ui.commitMessageBlock(msg))
+      }
 
       const action = args.yes || args.dryRun ? "commit" : await (args.selectAction ?? selectAction)(msg, intent)
       if (action === "cancel") {
-        out("Cancelled")
+        out(ui.info("Cancelled"))
         return
       }
       if (action === "edit") {
         const next = await (args.edit ?? edit)(msg)
         if (!next) {
-          out("Cancelled")
+          out(ui.info("Cancelled"))
           return
         }
         msg = next
@@ -373,8 +417,8 @@ export async function handle(args: Args) {
       }
 
       if (args.dryRun) {
-        out("Dry run: commit not created")
-        if (args.push) out("Dry run: push skipped")
+        out(ui.info("Dry run: commit not created"))
+        if (args.push) out(ui.info("Dry run: push skipped"))
         break
       }
 
@@ -391,13 +435,16 @@ export async function handle(args: Args) {
 
       const result = run(["commit", "-m", msg], root)
       if (!check(result, error, exit)) return
-      out(result.stdout.trim() || "Committed")
+      out("")
+      const text = result.stdout.trim()
+      if (text) out(ui.gitOutput(text))
+      if (!text) out(ui.success("Committed"))
       committed = true
       break
     }
   }
 
-  if (args.push && committed) runPush(run, root, out, error, exit)
+  if (args.push && committed) runPush(run, root, out, error, exit, ui)
 }
 
 export const CommitCommand = effectCmd<CliArgs, void>({
@@ -441,6 +488,8 @@ export const CommitCommand = effectCmd<CliArgs, void>({
   handler: Effect.fn("Cli.commit")(function* (args) {
     const cfg = yield* Config.Service.use((svc) => svc.get())
     const instance = yield* InstanceRef
+    const root = invocationDirectory(args.dir)
+    const style = yield* Effect.promise(() => resolveCliStyle({ directory: root }))
     yield* Effect.promise(() =>
       handle({
         dir: args.dir,
@@ -454,6 +503,7 @@ export const CommitCommand = effectCmd<CliArgs, void>({
         prompt: cfg.commit_message?.prompt || undefined,
         model: cfg.commit_message?.model,
         instance,
+        style,
       }),
     )
   }),

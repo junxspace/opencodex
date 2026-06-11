@@ -129,8 +129,9 @@ describe("commit command", () => {
     })
 
     expect(await log(tmp.path)).toBe("feat: add file")
-    expect(out.join("\n")).toContain("Staged changes:")
-    expect(out.join("\n")).toContain("file.txt")
+    const text = out.join("\n")
+    expect(text).toContain("Staged changes")
+    expect(text).toContain("file.txt")
   })
 
   test("auto-stages related tracked changes with --all", async () => {
@@ -322,8 +323,9 @@ describe("commit command", () => {
     })
 
     expect(calls).toEqual(["status --porcelain", "push"])
-    expect(out).toContain("No changes found")
-    expect(out).toContain("pushed")
+    const text = out.join("\n")
+    expect(text).toContain("No changes found")
+    expect(text).toContain("pushed")
   })
 
   test("reviews status and diffs before committing staged changes", async () => {
