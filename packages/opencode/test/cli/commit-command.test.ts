@@ -1,7 +1,14 @@
 import { $ } from "bun"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { handle, parseStatus, preview } from "../../src/cli/cmd/commit"
+import {
+  handle,
+  intentFiles,
+  noCommittableMessage,
+  parseStatus,
+  preview,
+  resolveStageOptions,
+} from "../../src/cli/cmd/commit"
 import { tmpdir } from "../fixture/fixture"
 
 async function log(dir: string) {
@@ -15,6 +22,82 @@ async function tracked(dir: string) {
 }
 
 describe("commit command", () => {
+  test("intentFiles requires staged changes unless --all or --include-untracked is set", () => {
+    const status = parseStatus(" M bun.lock\n")
+    expect(intentFiles(status, {})).toEqual([])
+    expect(intentFiles(status, { all: true })).toEqual(["bun.lock"])
+    expect(noCommittableMessage(status, {}, [])).toContain("No staged changes")
+    expect(noCommittableMessage(status, { all: true }, ["bun.lock"])).toContain("Only lock file changes found")
+  })
+
+  test("resolveStageOptions enables --all when --yes or --push is set without staged changes", () => {
+    const status = parseStatus(" M file.txt\n")
+    expect(resolveStageOptions(status, { yes: true })).toEqual({ all: true, includeUntracked: false })
+    expect(resolveStageOptions(status, { push: true })).toEqual({ all: true, includeUntracked: false })
+    expect(resolveStageOptions(status, {})).toEqual({ all: false, includeUntracked: false })
+    expect(resolveStageOptions(parseStatus("M  file.txt\n"), { yes: true })).toEqual({
+      all: false,
+      includeUntracked: false,
+    })
+  })
+
+  test("commits unstaged changes with --yes --push", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "file.txt"), "hello\n")
+        await $`git add file.txt`.cwd(dir).quiet()
+        await $`git commit -m "add file"`.cwd(dir).quiet()
+      },
+    })
+    await Bun.write(path.join(tmp.path, "file.txt"), "hello\nworld\n")
+    const calls: string[] = []
+
+    await handle({
+      dir: tmp.path,
+      yes: true,
+      push: true,
+      generate: async () => ({ message: "fix: update file" }),
+      git: (args) => {
+        calls.push(args.join(" "))
+        if (args.join(" ") === "status --porcelain") return { code: 0, stdout: " M file.txt\n", stderr: "" }
+        if (args.join(" ") === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" }
+        if (args[0] === "push") return { code: 0, stdout: "pushed\n", stderr: "" }
+        return { code: 0, stdout: "", stderr: "" }
+      },
+      output: () => {},
+      error: () => {},
+      exit: () => {},
+    })
+
+    expect(calls).toContain("add file.txt")
+    expect(calls).toContain("commit -m fix: update file")
+    expect(calls.at(-1)).toBe("push")
+  })
+
+  test("rejects unstaged changes without --all", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "file.txt"), "hello\n")
+        await $`git add file.txt`.cwd(dir).quiet()
+        await $`git commit -m "add file"`.cwd(dir).quiet()
+      },
+    })
+    await Bun.write(path.join(tmp.path, "file.txt"), "hello\nworld\n")
+    const errors: string[] = []
+
+    await handle({
+      dir: tmp.path,
+      generate: async () => ({ message: "fix: update file" }),
+      output: () => {},
+      error: (text) => errors.push(text),
+      exit: () => {},
+    })
+
+    expect(errors).toEqual(["No staged changes. Stage files with git add or pass --all to include unstaged changes."])
+  })
+
   test("preview truncates long file lists and omits wide git add line", () => {
     const files = Array.from({ length: 20 }, (_, i) => `packages/foo/file-${i}.ts`)
     const text = preview("feat: add feature", { files, description: "add feature" })
@@ -149,7 +232,7 @@ describe("commit command", () => {
     await using tmp = await tmpdir({ git: true })
     await Bun.write(path.join(tmp.path, "file.txt"), "hello\n")
 
-    const result = await $`bun run --conditions=browser src/index.ts commit --dir ${tmp.path} --dry-run --message test`
+    const result = await $`bun run --conditions=browser src/index.ts commit --dir ${tmp.path} --dry-run --include-untracked --message test`
       .cwd(path.join(import.meta.dir, "../.."))
       .quiet()
       .nothrow()
@@ -165,7 +248,7 @@ describe("commit command", () => {
     await using tmp = await tmpdir({ git: true })
     await Bun.write(path.join(tmp.path, "from-orig.txt"), "hello\n")
 
-    const result = await $`bun run --conditions=browser src/index.ts commit --dry-run --message test`
+    const result = await $`bun run --conditions=browser src/index.ts commit --dry-run --include-untracked --message test`
       .cwd(path.join(import.meta.dir, "../.."))
       .env({ ...process.env, OPENCODE_ORIG_CWD: tmp.path })
       .quiet()
@@ -177,6 +260,51 @@ describe("commit command", () => {
     expect(text).toContain("Dry run: commit not created")
     expect(text).not.toContain("No context found for instance")
     expect(text).not.toContain("service=commit-message")
+  })
+
+  test("pushes after committing when --push is set", async () => {
+    const calls: string[] = []
+    await handle({
+      dir: "/repo",
+      yes: true,
+      push: true,
+      generate: async () => ({ message: "fix: update file" }),
+      analyzeIntent: async () => ({ intents: [{ files: ["file.txt"], description: "update file" }] }),
+      git: (args) => {
+        calls.push(args.join(" "))
+        if (args.join(" ") === "status --porcelain") return { code: 0, stdout: "M  file.txt\n", stderr: "" }
+        if (args.join(" ") === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" }
+        if (args[0] === "push") return { code: 0, stdout: "pushed\n", stderr: "" }
+        return { code: 0, stdout: "", stderr: "" }
+      },
+      output: () => {},
+    })
+
+    expect(calls).toContain("commit -m fix: update file")
+    expect(calls.at(-1)).toBe("push")
+  })
+
+  test("does not push on dry run even with --push", async () => {
+    const calls: string[] = []
+    const out: string[] = []
+
+    await handle({
+      dir: "/repo",
+      yes: true,
+      push: true,
+      dryRun: true,
+      generate: async () => ({ message: "fix: update file" }),
+      analyzeIntent: async () => ({ intents: [{ files: ["file.txt"], description: "update file" }] }),
+      git: (args) => {
+        calls.push(args.join(" "))
+        if (args.join(" ") === "status --porcelain") return { code: 0, stdout: "M  file.txt\n", stderr: "" }
+        return { code: 0, stdout: "", stderr: "" }
+      },
+      output: (text) => out.push(text),
+    })
+
+    expect(calls).not.toContain("push")
+    expect(out.join("\n")).toContain("Dry run: push skipped")
   })
 
   test("runs push when there are no changes and --yes is set", async () => {
@@ -235,6 +363,7 @@ describe("commit command", () => {
     await handle({
       dir: tmp.path,
       yes: true,
+      all: true,
       generate: async () => ({ message: "feat: add login" }),
       analyzeIntent: async () => ({ intents: [{ files: ["src/auth.ts", "test/auth.test.ts"], description: "add login feature" }] }),
       git: (args) => {
@@ -260,6 +389,7 @@ describe("commit command", () => {
     await handle({
       dir: tmp.path,
       yes: true,
+      all: true,
       generate: async (input) => ({ message: input.intent?.description ?? "update" }),
       analyzeIntent: async () => ({
         intents: [

@@ -7,7 +7,7 @@ import { Config } from "@/config/config"
 import { InstanceRef } from "@/effect/instance-ref"
 import { invocationDirectory } from "../invocation-directory"
 import { generateCommitMessage } from "@/commit-message"
-import { getGitContext } from "@/commit-message/git-context"
+import { getGitContext, isLockFile } from "@/commit-message/git-context"
 import type { CommitMessageRequest } from "@/commit-message/types"
 
 export type Status = {
@@ -38,6 +38,7 @@ type Args = {
   includeUntracked?: boolean
   message?: string
   yes?: boolean
+  push?: boolean
   dryRun?: boolean
   previous?: string
   prompt?: string
@@ -45,7 +46,7 @@ type Args = {
   instance?: CommitMessageRequest["instance"]
   git?: (args: string[], cwd: string) => GitResult
   generate?: typeof generateCommitMessage
-  analyzeIntent?: (input: { path: string; status: Status }) => Promise<IntentResult>
+  analyzeIntent?: (input: { path: string; selectedFiles: string[] }) => Promise<IntentResult>
   selectAction?: (message: string, intent?: Intent) => Promise<Action>
   selectPush?: () => Promise<PushAction>
   edit?: (message: string) => Promise<string | undefined>
@@ -61,6 +62,7 @@ type CliArgs = {
   message?: string
   previous?: string
   yes?: boolean
+  push?: boolean
   "dry-run"?: boolean
 }
 
@@ -114,12 +116,46 @@ function files(status: Status) {
   return [...new Set([...status.staged, ...status.unstaged, ...status.untracked])]
 }
 
-async function analyze(input: { path: string; status: Status }): Promise<IntentResult> {
-  const ctx = await getGitContext(input.path)
+export function resolveStageOptions(
+  status: Status,
+  options: { all?: boolean; includeUntracked?: boolean; yes?: boolean; push?: boolean },
+) {
+  const autoAll = status.staged.length === 0 && (options.yes === true || options.push === true)
+  return {
+    all: options.all === true || autoAll,
+    includeUntracked: options.includeUntracked === true,
+  }
+}
+
+export function intentFiles(status: Status, options: { all?: boolean; includeUntracked?: boolean }) {
+  if (status.staged.length > 0) return status.staged
+  if (options.all) return files(status)
+  if (options.includeUntracked) return [...new Set([...status.unstaged, ...status.untracked])]
+  return []
+}
+
+export function noCommittableMessage(
+  status: Status,
+  options: { all?: boolean; includeUntracked?: boolean },
+  selected: string[],
+) {
+  if (status.staged.length === 0 && !options.all && !options.includeUntracked) {
+    return "No staged changes. Stage files with git add or pass --all to include unstaged changes."
+  }
+  if (selected.length > 0 && selected.every(isLockFile)) {
+    return "Only lock file changes found. Lock files are excluded from AI commit generation."
+  }
+  return "No committable changes found."
+}
+
+async function analyze(input: { path: string; selectedFiles: string[] }): Promise<IntentResult> {
+  const ctx = await getGitContext(input.path, input.selectedFiles)
+  const commitFiles = ctx.files.map((file) => file.path)
+  if (commitFiles.length === 0) return { intents: [] }
   return {
     intents: [
       {
-        files: ctx.files.map((file) => file.path),
+        files: commitFiles,
         description: "commit related changes",
       },
     ],
@@ -131,6 +167,19 @@ function check(result: GitResult, error: (text: string) => void, exit: (code: nu
   error(result.stderr.trim() || result.stdout.trim() || "git command failed")
   exit(result.code || 1)
   return false
+}
+
+function runPush(
+  run: (args: string[], cwd: string) => GitResult,
+  root: string,
+  out: (text: string) => void,
+  error: (text: string) => void,
+  exit: (code: number) => void,
+) {
+  const result = run(["push"], root)
+  if (!check(result, error, exit)) return false
+  out(result.stdout.trim() || "Pushed")
+  return true
 }
 
 async function selectPush(): Promise<PushAction> {
@@ -214,9 +263,7 @@ export async function handle(args: Args) {
       out("Cancelled")
       return
     }
-    const result = run(["push"], root)
-    if (!check(result, error, exit)) return
-    out(result.stdout.trim() || "Pushed")
+    if (!runPush(run, root, out, error, exit)) return
     return
   }
 
@@ -225,10 +272,24 @@ export async function handle(args: Args) {
   const staged = run(["diff", "--staged"], root)
   if (!check(staged, error, exit)) return
 
-  const analysis = await (args.analyzeIntent ?? analyze)({ path: root, status })
+  const stageOptions = resolveStageOptions(status, {
+    all: args.all,
+    includeUntracked: args.includeUntracked,
+    yes: args.yes,
+    push: args.push,
+  })
+  const selected = intentFiles(status, stageOptions)
+  const committable = selected.filter((file) => !isLockFile(file))
+  if (committable.length === 0) {
+    error(noCommittableMessage(status, stageOptions, selected))
+    exit(1)
+    return
+  }
+
+  const analysis = await (args.analyzeIntent ?? analyze)({ path: root, selectedFiles: committable })
   const intents = analysis.intents.filter((intent) => intent.files.length > 0)
   if (intents.length === 0) {
-    error("No committable intent found")
+    error(noCommittableMessage(status, stageOptions, selected))
     exit(1)
     return
   }
@@ -239,6 +300,7 @@ export async function handle(args: Args) {
   }
 
   const gen = args.generate ?? generateCommitMessage
+  let committed = false
   for (const intent of intents) {
     const known = new Set(files(status))
     const invalid = intent.files.filter((file) => !known.has(file))
@@ -312,6 +374,7 @@ export async function handle(args: Args) {
 
       if (args.dryRun) {
         out("Dry run: commit not created")
+        if (args.push) out("Dry run: push skipped")
         break
       }
 
@@ -329,9 +392,12 @@ export async function handle(args: Args) {
       const result = run(["commit", "-m", msg], root)
       if (!check(result, error, exit)) return
       out(result.stdout.trim() || "Committed")
+      committed = true
       break
     }
   }
+
+  if (args.push && committed) runPush(run, root, out, error, exit)
 }
 
 export const CommitCommand = effectCmd<CliArgs, void>({
@@ -364,6 +430,10 @@ export const CommitCommand = effectCmd<CliArgs, void>({
         type: "boolean",
         describe: "commit without confirmation",
       })
+      .option("push", {
+        type: "boolean",
+        describe: "push the branch after committing",
+      })
       .option("dry-run", {
         type: "boolean",
         describe: "show message without creating a commit",
@@ -379,6 +449,7 @@ export const CommitCommand = effectCmd<CliArgs, void>({
         message: args.message,
         previous: args.previous,
         yes: args.yes,
+        push: args.push,
         dryRun: args["dry-run"],
         prompt: cfg.commit_message?.prompt || undefined,
         model: cfg.commit_message?.model,
