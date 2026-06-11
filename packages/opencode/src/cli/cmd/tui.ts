@@ -14,6 +14,7 @@ import { writeHeapSnapshot } from "v8"
 import { validateSession } from "../tui/validate-session"
 import { win32InstallCtrlCGuard } from "@opencode-ai/tui/terminal-win32"
 import { resetTerminalState } from "@opencode-ai/tui/util/terminal"
+import { invocationDirectory } from "../invocation-directory"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -63,9 +64,17 @@ async function input(value?: string) {
   return piped + "\n" + value
 }
 
-export function resolveThreadDirectory(project?: string, envPWD = process.env.PWD, cwd = process.cwd()) {
-  const root = Filesystem.resolve(envPWD ?? cwd)
-  if (project) return Filesystem.resolve(path.isAbsolute(project) ? project : path.join(root, project))
+export function resolveThreadDirectory(
+  project?: string,
+  envOrigCwd = process.env.OPENCODE_ORIG_CWD,
+  envPWD = process.env.PWD,
+  cwd = process.cwd(),
+) {
+  if (project) {
+    if (path.isAbsolute(project)) return Filesystem.resolve(project)
+    return Filesystem.resolve(invocationDirectory(project, envOrigCwd ?? envPWD, cwd))
+  }
+  if (envOrigCwd) return Filesystem.resolve(envOrigCwd)
   return Filesystem.resolve(cwd)
 }
 

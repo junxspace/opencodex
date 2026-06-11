@@ -13,14 +13,14 @@ describe("tui thread", () => {
     expect(source).not.toContain('import("./app")')
   })
 
-  async function check(project?: string) {
+  async function check(project?: string, envOrigCwd?: string) {
     await using tmp = await tmpdir({ git: true })
     const link = path.join(path.dirname(tmp.path), path.basename(tmp.path) + "-link")
     const type = process.platform === "win32" ? "junction" : "dir"
 
     try {
       await fs.symlink(tmp.path, link, type)
-      expect(resolveThreadDirectory(project, link, tmp.path)).toBe(tmp.path)
+      expect(resolveThreadDirectory(project, envOrigCwd, link, tmp.path)).toBe(tmp.path)
     } finally {
       await fs.rm(link, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -32,5 +32,12 @@ describe("tui thread", () => {
 
   test("uses the real cwd after resolving a relative project from PWD", async () => {
     await check(".")
+  })
+
+  test("uses OPENCODE_ORIG_CWD when the launcher changes process cwd", async () => {
+    await using tmp = await tmpdir({ git: true })
+    const launcher = path.join(path.dirname(tmp.path), "packages", "opencode")
+
+    expect(resolveThreadDirectory(undefined, tmp.path, launcher, launcher)).toBe(tmp.path)
   })
 })
