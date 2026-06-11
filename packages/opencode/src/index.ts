@@ -26,6 +26,8 @@ import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
+import { TelemetryCommand } from "./cli/cmd/telemetry"
+import { CommitCommand } from "./cli/cmd/commit"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
@@ -72,6 +74,22 @@ const cli = yargs(args)
 
     Heap.start()
 
+    const Log = await import("@opencode-ai/core/util/log")
+    const { InstallationLocal } = await import("@opencode-ai/core/installation/version")
+    const level = (() => {
+      const fromEnv = process.env.OPENCODE_LOG_LEVEL?.toUpperCase()
+      if (fromEnv === "DEBUG" || fromEnv === "INFO" || fromEnv === "WARN" || fromEnv === "ERROR") return fromEnv
+      return InstallationLocal ? "DEBUG" : "INFO"
+    })()
+    await Log.init({
+      print: Boolean(opts.printLogs) || process.env.OPENCODE_PRINT_LOGS === "1",
+      dev: InstallationLocal,
+      level,
+    })
+
+    const { setupTelemetry } = await import("./telemetry/setup")
+    setupTelemetry()
+
     process.env.AGENT = "1"
     process.env.OPENCODE = "1"
     process.env.OPENCODE_PID = String(process.pid)
@@ -99,8 +117,10 @@ const cli = yargs(args)
   .command(GithubCommand)
   .command(PrCommand)
   .command(SessionCommand)
+  .command(CommitCommand)
   .command(PluginCommand)
   .command(DbCommand)
+  .command(TelemetryCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

@@ -31,6 +31,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ToolOutput, Usage, type LLMEvent } from "@opencode-ai/llm"
+import { Telemetry } from "@opencode-ai/core/telemetry"
 
 const DOOM_LOOP_THRESHOLD = 3
 export type Result = "compact" | "stop" | "continue"
@@ -83,6 +84,9 @@ interface ProcessorContext extends Input {
   currentTextID: string | undefined
   reasoningMap: Record<string, SessionV1.ReasoningPart>
   v2AssistantMessageID: SessionMessage.ID | undefined
+  streamStart: number | undefined
+  stepStart: number | undefined
+  timeToFirstTokenMs: number | undefined
 }
 
 type StreamEvent = LLMEvent
@@ -125,6 +129,9 @@ export const layer = Layer.effect(
         currentTextID: undefined,
         reasoningMap: {},
         v2AssistantMessageID: undefined,
+        streamStart: undefined,
+        stepStart: undefined,
+        timeToFirstTokenMs: undefined,
       }
       const mirrorAssistant = flags.experimentalEventSystem && !input.assistantMessage.summary
       let aborted = false
@@ -211,6 +218,7 @@ export const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
+        const end = Date.now()
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -219,9 +227,16 @@ export const layer = Layer.effect(
             output: output.output,
             metadata: output.metadata,
             title: output.title,
-            time: { start: match.part.state.time.start, end: Date.now() },
+            time: { start: match.part.state.time.start, end },
             attachments: output.attachments,
           },
+        })
+        Telemetry.trackToolUsed({
+          tool: match.part.tool,
+          sessionID: ctx.sessionID,
+          messageID: ctx.assistantMessage.id,
+          durationMs: Math.max(0, end - match.part.state.time.start),
+          status: "completed",
         })
         yield* settleToolCall(toolCallID)
       })
@@ -229,14 +244,22 @@ export const layer = Layer.effect(
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return false
+        const end = Date.now()
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "error",
             input: match.part.state.input,
             error: errorMessage(error),
-            time: { start: match.part.state.time.start, end: Date.now() },
+            time: { start: match.part.state.time.start, end },
           },
+        })
+        Telemetry.trackToolUsed({
+          tool: match.part.tool,
+          sessionID: ctx.sessionID,
+          messageID: ctx.assistantMessage.id,
+          durationMs: Math.max(0, end - match.part.state.time.start),
+          status: "error",
         })
         if (error instanceof PermissionV1.RejectedError || error instanceof Question.RejectedError) {
           ctx.blocked = ctx.shouldBreak
@@ -674,6 +697,10 @@ export const layer = Layer.effect(
             throw new Error(value.message)
 
           case "step-start":
+            ctx.stepStart = performance.now()
+            if (ctx.timeToFirstTokenMs === undefined && ctx.streamStart !== undefined) {
+              ctx.timeToFirstTokenMs = Math.round(ctx.stepStart - ctx.streamStart)
+            }
             if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
@@ -697,6 +724,27 @@ export const layer = Layer.effect(
               model: ctx.model,
               usage: value.usage ?? new Usage({}),
               metadata: value.providerMetadata,
+            })
+            const finished = performance.now()
+            const generationMs =
+              ctx.stepStart === undefined ? undefined : Math.round(finished - ctx.stepStart)
+            const streamMs =
+              ctx.streamStart === undefined ? undefined : Math.round(finished - ctx.streamStart)
+            Telemetry.trackLlmCompletion({
+              sessionID: ctx.sessionID,
+              messageID: ctx.assistantMessage.id,
+              agent: ctx.assistantMessage.agent,
+              providerID: ctx.model.providerID,
+              modelID: ctx.model.id,
+              inputTokens: usage.tokens.input,
+              outputTokens: usage.tokens.output,
+              cacheReadTokens: usage.tokens.cache.read,
+              cacheWriteTokens: usage.tokens.cache.write,
+              cost: usage.cost,
+              durationMs: generationMs,
+              generationMs,
+              timeToFirstTokenMs: ctx.timeToFirstTokenMs,
+              streamMs,
             })
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
@@ -970,6 +1018,9 @@ export const layer = Layer.effect(
             ctx.currentText = undefined
             ctx.currentTextID = undefined
             ctx.reasoningMap = {}
+            ctx.streamStart = performance.now()
+            ctx.stepStart = undefined
+            ctx.timeToFirstTokenMs = undefined
             yield* status.set(ctx.sessionID, { type: "busy" })
             const stream = llm.stream(streamInput)
 

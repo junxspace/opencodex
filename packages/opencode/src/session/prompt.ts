@@ -49,6 +49,7 @@ import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
+import { Telemetry } from "@opencode-ai/core/telemetry"
 import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { ModelV2 } from "@opencode-ai/core/model"
@@ -381,6 +382,7 @@ export const layer = Layer.effect(
       yield* sessions.updateMessage(assistantMessage)
 
       if (result && part.state.status === "running") {
+        const end = Date.now()
         yield* sessions.updatePart({
           ...part,
           state: {
@@ -390,25 +392,42 @@ export const layer = Layer.effect(
             metadata: result.metadata,
             output: result.output,
             attachments,
-            time: { ...part.state.time, end: Date.now() },
+            time: { ...part.state.time, end },
           },
         } satisfies SessionV1.ToolPart)
+        Telemetry.trackToolUsed({
+          tool: part.tool,
+          sessionID,
+          messageID: assistantMessage.id,
+          durationMs: Math.max(0, end - part.state.time.start),
+          status: "completed",
+        })
       }
 
       if (!result) {
+        const end = Date.now()
         yield* sessions.updatePart({
           ...part,
           state: {
             status: "error",
             error: error ? `Tool execution failed: ${error.message}` : "Tool execution failed",
             time: {
-              start: part.state.status === "running" ? part.state.time.start : Date.now(),
-              end: Date.now(),
+              start: part.state.status === "running" ? part.state.time.start : end,
+              end,
             },
             metadata: part.state.status === "pending" ? undefined : part.state.metadata,
             input: part.state.input,
           },
         } satisfies SessionV1.ToolPart)
+        if (part.state.status === "running") {
+          Telemetry.trackToolUsed({
+            tool: part.tool,
+            sessionID,
+            messageID: assistantMessage.id,
+            durationMs: Math.max(0, end - part.state.time.start),
+            status: "error",
+          })
+        }
       }
 
       if (!task.command) return
@@ -1176,6 +1195,21 @@ export const layer = Layer.effect(
                 messageID: lastAssistant.id,
                 tool: orphan.tool,
                 callID: orphan.callID,
+              })
+            }
+            const completed = lastAssistant.time.completed
+            if (typeof completed === "number" && completed > lastUser.time.created) {
+              const assistants = msgs.filter((m) => m.info.role === "assistant" && m.info.id > lastUser.id)
+              Telemetry.trackTurnCompleted({
+                sessionID,
+                userMessageID: lastUser.id,
+                assistantMessageID: lastAssistant.id,
+                agent: lastAssistant.agent,
+                providerID: lastAssistant.providerID,
+                modelID: lastAssistant.modelID,
+                durationMs: completed - lastUser.time.created,
+                assistantSteps: assistants.length,
+                toolCalls: assistants.flatMap((m) => m.parts.filter((p) => p.type === "tool")).length,
               })
             }
             yield* Effect.logInfo("exiting loop", { "session.id": sessionID })

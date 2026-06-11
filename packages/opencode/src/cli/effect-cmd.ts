@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import type { AppServices } from "@/effect/app-runtime"
 import type { InstanceStore } from "@/project/instance-store"
 import { cmd, type WithDoubleDash } from "./cmd/cmd"
+import { invocationDirectory } from "@/cli/invocation-directory"
 
 /**
  * User-visible command failure. Throw via `fail("...")` from an effectCmd handler
@@ -83,7 +84,7 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
       }
       const { InstanceStore } = await import("@/project/instance-store")
       const { InstanceRef } = await import("@/effect/instance-ref")
-      const directory = opts.directory?.(args) ?? process.cwd()
+      const directory = opts.directory?.(args) ?? invocationDirectory()
       const { store, ctx } = await AppRuntime.runPromise(
         InstanceStore.Service.use((store) => store.load({ directory }).pipe(Effect.map((ctx) => ({ store, ctx })))),
       )

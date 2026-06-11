@@ -32,6 +32,16 @@ import { LLMRequestPrep } from "./llm/request"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
+export function invalidToolRepair(toolName: string, message: string) {
+  return {
+    input: JSON.stringify({
+      tool: toolName,
+      error: message,
+    }),
+    toolName: "invalid" as const,
+  }
+}
+
 export type StreamInput = {
   user: SessionV1.User
   sessionID: string
@@ -303,11 +313,7 @@ const live: Layer.Layer<
             }
             return {
               ...failed.toolCall,
-              input: JSON.stringify({
-                tool: failed.toolCall.toolName,
-                error: failed.error.message,
-              }),
-              toolName: "invalid",
+              ...invalidToolRepair(failed.toolCall.toolName, failed.error.message),
             }
           },
           temperature: prepared.params.temperature,

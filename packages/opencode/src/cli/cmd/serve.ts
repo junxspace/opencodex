@@ -2,6 +2,8 @@ import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import * as Log from "@opencode-ai/core/util/log"
+import { InstallationLocal } from "@opencode-ai/core/installation/version"
 
 export const ServeCommand = effectCmd({
   command: "serve",
@@ -18,6 +20,25 @@ export const ServeCommand = effectCmd({
     const opts = yield* resolveNetworkOptions(args)
     const server = yield* Effect.promise(() => Server.listen(opts))
     console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
+
+    const level = (() => {
+      const fromEnv = process.env.OPENCODE_LOG_LEVEL?.toUpperCase()
+      if (fromEnv === "DEBUG" || fromEnv === "INFO" || fromEnv === "WARN" || fromEnv === "ERROR") return fromEnv
+      return InstallationLocal ? "DEBUG" : "INFO"
+    })()
+    yield* Effect.promise(() =>
+      Log.init({
+        print: process.argv.includes("--print-logs") || process.env.OPENCODE_PRINT_LOGS === "1",
+        dev: InstallationLocal,
+        level,
+      }),
+    )
+
+    const { setupTelemetry } = yield* Effect.promise(() => import("@/telemetry/setup"))
+    setupTelemetry()
+
+    const { setupNotification } = yield* Effect.promise(() => import("@/notification/webhook"))
+    yield* Effect.promise(() => setupNotification())
 
     yield* Effect.never
   }),

@@ -10,13 +10,32 @@ import { Heap } from "@/cli/heap"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import * as Log from "@opencode-ai/core/util/log"
+import { InstallationLocal } from "@opencode-ai/core/installation/version"
+
+const level = (() => {
+  const fromEnv = process.env.OPENCODE_LOG_LEVEL?.toUpperCase()
+  if (fromEnv === "DEBUG" || fromEnv === "INFO" || fromEnv === "WARN" || fromEnv === "ERROR") return fromEnv
+  return InstallationLocal ? "DEBUG" : "INFO"
+})()
+
+await Log.init({
+  print: process.argv.includes("--print-logs") || process.env.OPENCODE_PRINT_LOGS === "1",
+  dev: InstallationLocal,
+  level,
+})
+
+const { setupTelemetry } = await import("@/telemetry/setup")
+setupTelemetry()
 
 Heap.start()
 
-// Subscribe to global events and forward them via RPC
 GlobalBus.on("event", (event) => {
   Rpc.emit("global.event", event)
 })
+
+const { setupNotification } = await import("@/notification/webhook")
+await setupNotification()
 
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
 

@@ -13,6 +13,7 @@ import type { EventSource } from "@opencode-ai/tui/context/sdk"
 import { writeHeapSnapshot } from "v8"
 import { validateSession } from "../tui/validate-session"
 import { win32InstallCtrlCGuard } from "@opencode-ai/tui/terminal-win32"
+import { resetTerminalState } from "@opencode-ai/tui/util/terminal"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -218,6 +219,7 @@ export const TuiThreadCommand = cmd({
         unguard?.()
       } catch {}
     }
+    resetTerminalState()
     process.exit(0)
   },
 })

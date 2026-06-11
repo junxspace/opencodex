@@ -16,6 +16,8 @@ import { ConfigPluginV1 } from "./plugin"
 import { ConfigProviderV1 } from "./provider"
 import { ConfigServerV1 } from "./server"
 import { ConfigSkillsV1 } from "./skills"
+import { CommitMessage } from "./commit-message"
+import { Notification } from "./notification"
 
 export type Layout = ConfigLayoutV1.Layout
 
@@ -110,6 +112,12 @@ export const Info = Schema.Struct({
   mcp: Schema.optional(
     Schema.Record(Schema.String, Schema.Union([ConfigMCPV1.Info, Schema.Struct({ enabled: Schema.Boolean })])),
   ).annotate({ description: "MCP (Model Context Protocol) server configurations" }),
+  mcp_profile: Schema.optional(Schema.String).annotate({
+    description: "Active MCP profile name. When set with mcp_profiles, only servers listed in that profile are started.",
+  }),
+  mcp_profiles: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))).annotate({
+    description: "Named MCP server groups. Used with mcp_profile to limit which servers connect on startup.",
+  }),
   formatter: Schema.optional(ConfigFormatterV1.Info).annotate({
     description:
       "Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
@@ -163,6 +171,8 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  commit_message: CommitMessage,
+  notification: Notification,
   experimental: Schema.optional(
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),
