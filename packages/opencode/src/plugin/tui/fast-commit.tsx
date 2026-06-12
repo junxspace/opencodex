@@ -197,6 +197,14 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
   if (lines.length > 0 || result.commitCount > 0) {
     await alert(api, failed ? `${title} failed` : title, dialogMessage(lines, failed))
   }
+
+  if (!failed && result.commitCount > 0) {
+    api.ui.toast({
+      variant: "success",
+      message: push ? `已提交 ${result.commitCount} 个更改并推送` : `已提交 ${result.commitCount} 个更改`,
+      duration: 3000,
+    })
+  }
 }
 
 function register(api: TuiPluginApi, name: string, title: string, slashName: string, push: boolean) {
