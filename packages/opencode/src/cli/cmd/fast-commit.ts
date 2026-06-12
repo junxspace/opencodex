@@ -2,8 +2,9 @@ import type { Argv } from "yargs"
 import * as prompts from "@clack/prompts"
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
-import { resolveCliStyle, type CliStyle } from "../theme"
+import { resolveCliStyle } from "../theme"
 import { UI } from "../ui"
+import { commitUi, type FastCommitUi, type Status } from "./fast-commit-ui"
 import { Config } from "@/config/config"
 import { InstanceRef } from "@/effect/instance-ref"
 import { invocationDirectory } from "../invocation-directory"
@@ -14,11 +15,7 @@ import { isLockFile } from "@/commit-message/git-context"
 import { FAST_COMMIT_SYSTEM_PROMPT } from "@/commit-message/prompt"
 import type { CommitMessageRequest } from "@/commit-message/types"
 
-export type Status = {
-  staged: string[]
-  unstaged: string[]
-  untracked: string[]
-}
+export type { Status }
 
 type GitResult = {
   code: number
@@ -48,7 +45,7 @@ type Args = {
   output?: (text: string) => void
   error?: (text: string) => void
   exit?: (code: number) => void
-  style?: CliStyle
+  style?: Parameters<typeof commitUi>[0]
 }
 
 type CliArgs = {
@@ -96,46 +93,6 @@ export function parseStatus(text: string): Status {
   }
 }
 
-function commitUi(style: CliStyle) {
-  const styled = (text: string) => text + style.TEXT_NORMAL
-
-  return {
-    styled,
-    statusSection(title: string, files: string[]) {
-      const header = styled(`${style.TEXT_DIM_BOLD}${title}${style.TEXT_NORMAL}`)
-      if (files.length === 0) return `${header}\n${styled(`${style.TEXT_DIM}  none`)}`
-      const items = files.map((file) => {
-        const path = isLockFile(file) ? `${style.TEXT_DIM}  ${file}` : `  ${file}`
-        return styled(path)
-      })
-      return `${header}\n${items.join("\n")}`
-    },
-    commitMessageBlock(message: string) {
-      const [subject = "", ...body] = message.trim().split("\n")
-      return [
-        styled(`${style.TEXT_DIM_BOLD}Generated commit message${style.TEXT_NORMAL}`),
-        styled(`${style.TEXT_SUCCESS_BOLD}${subject}${style.TEXT_NORMAL}`),
-        ...body
-          .filter((line) => line.trim())
-          .map((line) => styled(`${style.TEXT_DIM}  ${line}${style.TEXT_NORMAL}`)),
-      ].join("\n")
-    },
-    gitOutput(text: string) {
-      return text
-        .split("\n")
-        .filter((line) => line.trim())
-        .map((line) => styled(`${style.TEXT_DIM}${line}${style.TEXT_NORMAL}`))
-        .join("\n")
-    },
-    success(text: string) {
-      return styled(`${style.TEXT_SUCCESS_BOLD}${text}${style.TEXT_NORMAL}`)
-    },
-    info(text: string) {
-      return styled(`${style.TEXT_DIM}${text}${style.TEXT_NORMAL}`)
-    },
-  }
-}
-
 function empty(status: Status) {
   return status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0
 }
@@ -162,13 +119,13 @@ function runPush(
   out: (text: string) => void,
   error: (text: string) => void,
   exit: (code: number) => void,
-  ui: ReturnType<typeof commitUi>,
+  ui: FastCommitUi,
 ) {
   const result = run(["push"], root)
   if (!check(result, error, exit)) return false
   const text = result.stdout.trim()
   if (text) out(ui.gitOutput(text))
-  out(ui.success("Pushed"))
+  out(ui.success("  🚀 Pushed to remote"))
   return true
 }
 
@@ -228,7 +185,7 @@ function nonLockFiles(files: string[]) {
 export async function handleFastCommit(args: Args) {
   const root = invocationDirectory(args.dir)
   const run = args.git ?? git
-  const out = args.output ?? ((text: string) => process.stdout.write(text + "\n"))
+  const out = args.output ?? ((text: string) => UI.println(text))
   const error = args.error ?? UI.error
   const exit = args.exit ?? ((code: number) => (process.exitCode = code))
   const ui = commitUi(args.style ?? (await resolveCliStyle({ directory: root })))
@@ -236,9 +193,7 @@ export async function handleFastCommit(args: Args) {
   if (!check(statusResult, error, exit)) return
 
   const status = parseStatus(statusResult.stdout)
-  out(ui.statusSection("Staged changes", status.staged))
-  out(ui.statusSection("Unstaged changes", status.unstaged))
-  out(ui.statusSection("Untracked files", status.untracked))
+  out(ui.statusOverview(status))
 
   const committable = selectedFiles(status, args.stagedOnly)
   if (empty(status) || committable.length === 0) {
@@ -269,8 +224,11 @@ export async function handleFastCommit(args: Args) {
     if (!check(reset, error, exit)) return
   }
 
+  out(ui.intentPlan(intents.length))
+
   const gen = args.generate ?? generateCommitMessage
   let committed = false
+  let commitCount = 0
   for (const [index, intent] of intents.entries()) {
     args.onProgress?.(index + 1, intents.length, intent)
     const known = new Set(allFiles(status))
@@ -344,9 +302,11 @@ export async function handleFastCommit(args: Args) {
       }
 
       if (args.dryRun) {
-        out(ui.info("Dry run: commit not created"))
+        out(ui.warn("Dry run: commit not created"))
         break
       }
+
+      if (!args.confirm) out(ui.intentHeader(index + 1, intents.length, msg, intent.files))
 
       const diff = run(["diff", "--cached", "--quiet"], root)
       if (diff.code === 0) {
@@ -361,16 +321,17 @@ export async function handleFastCommit(args: Args) {
 
       const result = run(["commit", "-m", msg], root)
       if (!check(result, error, exit)) return
-      out("")
       const text = result.stdout.trim()
-      if (text) out(ui.gitOutput(text))
-      if (!text) out(ui.success(`Committed (${index + 1}/${intents.length})`))
+      if (text) out(ui.gitCommitOutput(text))
+      if (!text) out(ui.committed(index + 1, intents.length))
       committed = true
+      commitCount++
       break
     }
   }
 
-  if (args.push && committed) runPush(run, root, out, error, exit, ui)
+  const pushed = args.push && committed ? runPush(run, root, out, error, exit, ui) : false
+  if (commitCount > 0) out(ui.summary(commitCount, pushed === true))
 }
 
 function fastCommitBuilder(yargs: Argv) {
