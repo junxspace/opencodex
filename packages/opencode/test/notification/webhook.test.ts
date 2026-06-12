@@ -4,6 +4,7 @@ import { Question } from "../../src/question"
 import { Session } from "../../src/session/session"
 import { SessionStatus } from "../../src/session/status"
 import {
+  isAbortError,
   notificationEvent,
   resolveTerminalStatus,
   shouldNotify,
@@ -42,7 +43,7 @@ describe("notification events", () => {
   })
 
   test("maps session status transitions to user events", () => {
-    const state = { wasBusy: false, hadError: false }
+    const state = { wasBusy: false, hadError: false, hadInterrupt: false }
 
     expect(notificationEvent(SessionStatus.Event.Status.type, { status: { type: "busy" } }, state)).toBeNull()
     expect(state.wasBusy).toBe(true)
@@ -52,13 +53,44 @@ describe("notification events", () => {
       status: "completed",
     })
 
-    const errored = { wasBusy: false, hadError: false }
-    notificationEvent(Session.Event.Error.type, {}, errored)
+    const errored = { wasBusy: false, hadError: false, hadInterrupt: false }
+    notificationEvent(Session.Event.Error.type, { error: { name: "ProviderError", message: "boom" } }, errored)
     errored.wasBusy = true
     expect(notificationEvent(SessionStatus.Event.Status.type, { status: { type: "idle" } }, errored)).toEqual({
       event: "task_error",
       status: "error",
     })
+
+    const interrupted = { wasBusy: false, hadError: false, hadInterrupt: false }
+    notificationEvent(
+      Session.Event.Error.type,
+      { error: { name: "MessageAbortedError", message: "Aborted" } },
+      interrupted,
+    )
+    interrupted.wasBusy = true
+    expect(notificationEvent(SessionStatus.Event.Status.type, { status: { type: "idle" } }, interrupted)).toEqual({
+      event: "task_interrupted",
+      status: "interrupted",
+    })
+  })
+
+  test("detects user abort errors", () => {
+    expect(isAbortError({ name: "MessageAbortedError", message: "Aborted" })).toBe(true)
+    expect(isAbortError({ name: "ProviderError", message: "boom" })).toBe(false)
+    expect(isAbortError(null)).toBe(false)
+  })
+
+  test("skips session_error for user abort", () => {
+    const state = { wasBusy: false, hadError: false, hadInterrupt: false }
+    expect(
+      notificationEvent(
+        Session.Event.Error.type,
+        { error: { name: "MessageAbortedError", message: "Aborted" } },
+        state,
+      ),
+    ).toBeNull()
+    expect(state.hadInterrupt).toBe(true)
+    expect(state.hadError).toBe(false)
   })
 
   test("maps permission and question events", () => {
@@ -82,7 +114,7 @@ describe("notification events", () => {
     expect(shouldNotify(cfg(), "permission_required")).toBe(true)
     expect(shouldNotify(cfg(), "question_required")).toBe(true)
     expect(shouldNotify(cfg(), "session_error")).toBe(true)
-    expect(shouldNotify(cfg(), "task_interrupted")).toBe(false)
+    expect(shouldNotify(cfg(), "task_interrupted")).toBe(true)
   })
 
   test("supports enabled_events allowlist", () => {

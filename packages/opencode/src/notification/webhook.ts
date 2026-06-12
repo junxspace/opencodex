@@ -79,11 +79,13 @@ export interface NotificationConfig {
 type SessionNotifyState = {
   wasBusy: boolean
   hadError: boolean
+  hadInterrupt: boolean
 }
 
 const DEFAULT_EVENTS = new Set<NotificationEvent>([
   "task_completed",
   "task_error",
+  "task_interrupted",
   "permission_required",
   "question_required",
   "session_error",
@@ -100,8 +102,8 @@ const VALID_EVENTS = new Set<NotificationEvent>([
 
 const STATUS_LABEL: Record<string, string> = {
   completed: "任务完成",
-  interrupted: "执行中断",
-  error: "执行中断",
+  interrupted: "任务中断",
+  error: "执行错误",
   waiting: "等待确认",
   session_error: "会话异常",
 }
@@ -129,9 +131,14 @@ export function resolveTerminalStatus(current: string | undefined, next: string)
 function sessionState(sessionID: string) {
   const existing = sessionStates.get(sessionID)
   if (existing) return existing
-  const next = { wasBusy: false, hadError: false }
+  const next = { wasBusy: false, hadError: false, hadInterrupt: false }
   sessionStates.set(sessionID, next)
   return next
+}
+
+export function isAbortError(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  return "name" in error && error.name === "MessageAbortedError"
 }
 
 export function notificationEvent(
@@ -148,6 +155,10 @@ export function notificationEvent(
     }
     if (status.type !== "idle" || !state.wasBusy) return null
     state.wasBusy = false
+    if (state.hadInterrupt) {
+      state.hadInterrupt = false
+      return { event: "task_interrupted", status: "interrupted" }
+    }
     if (state.hadError) {
       state.hadError = false
       return { event: "task_error", status: "error" }
@@ -157,6 +168,10 @@ export function notificationEvent(
   if (type === Permission.Event.Asked.type) return { event: "permission_required", status: "waiting" }
   if (type === Question.Event.Asked.type) return { event: "question_required", status: "waiting" }
   if (type === Session.Event.Error.type) {
+    if (state && isAbortError(props.error)) {
+      state.hadInterrupt = true
+      return null
+    }
     if (state) state.hadError = true
     return { event: "session_error", status: "session_error" }
   }
