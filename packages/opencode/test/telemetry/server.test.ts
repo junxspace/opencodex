@@ -49,6 +49,7 @@ describe("telemetry server", () => {
     const html = await page.text()
     expect(html).toContain("OpenCode Telemetry")
     expect(html).toContain('id="toggle-theme"')
+    expect(html).toContain('id="model-filter"')
     expect(html).toContain("opencode-telemetry-theme")
 
     const telemetry = await fetch(`${base}/api/telemetry?since=0`)
@@ -59,5 +60,22 @@ describe("telemetry server", () => {
     const stats = await fetch(`${base}/api/summary`)
     const summary = (await stats.json()) as { calls: number }
     expect(summary.calls).toBe(1)
+
+    const models = await fetch(`${base}/api/models`)
+    const modelBody = (await models.json()) as { items: Array<{ providerID: string; modelID: string }> }
+    expect(modelBody.items).toEqual([{ providerID: "openai", modelID: "gpt-test" }])
+
+    const filtered = await fetch(`${base}/api/telemetry?since=0&model=openai/gpt-test`)
+    const filteredBody = (await filtered.json()) as { items: Array<{ event: string }> }
+    expect(filteredBody.items).toHaveLength(1)
+
+    const pageHtml = await (await fetch(`${base}/`)).text()
+    expect(pageHtml).toContain("All-time statistics")
+    expect(pageHtml).toContain('id="events-scope"')
+
+    const latest = await fetch(`${base}/api/telemetry?latest=1`)
+    const latestBody = (await latest.json()) as { items: Array<{ id: number }> }
+    expect(latestBody.items).toHaveLength(1)
+    expect(latestBody.items[0]?.id).toBe(1)
   })
 })

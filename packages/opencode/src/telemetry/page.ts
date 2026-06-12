@@ -101,17 +101,33 @@ export function telemetryPage(pollMs: number) {
     main { padding: 20px; display: grid; gap: 16px; }
     .cards {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
+      padding: 0 0 4px;
     }
+    @media (max-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
     .card {
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 14px;
+      padding: 14px 16px;
+      min-height: 92px;
     }
-    .card .label { color: var(--muted); font-size: 12px; }
-    .card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+    .card .label { color: var(--muted); font-size: 12px; font-weight: 500; }
+    .card .value {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 6px;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
+    }
+    .card .card-sub {
+      margin-top: 8px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
     .panels { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
     @media (max-width: 1100px) { .panels { grid-template-columns: 1fr; } }
     .panel {
@@ -120,18 +136,79 @@ export function telemetryPage(pollMs: number) {
       border-radius: 12px;
       overflow: hidden;
     }
-    .panel h2 {
-      margin: 0;
+    .section-heading, .panel-heading {
       padding: 12px 14px;
-      font-size: 14px;
       border-bottom: 1px solid var(--border);
     }
+    .section-heading h2, .panel-heading h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .section-meta, .panel-meta {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .summary-section .cards { padding-top: 12px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+    th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); z-index: 1; }
+    th .th-hint {
+      display: block;
+      margin-top: 2px;
+      font-size: 10px;
+      font-weight: 500;
+      color: color-mix(in srgb, var(--muted) 82%, transparent);
+    }
     tbody tr:hover { background: var(--row-hover); }
     .table-wrap { max-height: 62vh; overflow: auto; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .session-cell {
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .metrics {
+      display: grid;
+      gap: 3px;
+      min-width: 108px;
+    }
+    .metric {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .metric-k {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .metric-v { font-variant-numeric: tabular-nums; }
+    .token-pair {
+      display: grid;
+      gap: 3px;
+      min-width: 88px;
+    }
+    .token-line {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      font-variant-numeric: tabular-nums;
+    }
+    .token-k {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .detail-line { font-variant-numeric: tabular-nums; }
     .pill {
       display: inline-block;
       padding: 2px 6px;
@@ -193,6 +270,9 @@ export function telemetryPage(pollMs: number) {
         <option value="turn.completed">turn.completed</option>
         <option value="tool.used">tool.used</option>
       </select>
+      <select id="model-filter">
+        <option value="">All models</option>
+      </select>
       <button id="toggle-theme" title="Toggle light/dark theme">Dark</button>
       <button id="toggle-live" class="active">Live</button>
       <span class="status live" id="status">
@@ -203,23 +283,22 @@ export function telemetryPage(pollMs: number) {
     <div class="header-live-bar" aria-hidden="true"></div>
   </header>
   <main>
-    <section class="cards" id="summary-cards"></section>
+    <section class="summary-section">
+      <div class="section-heading">
+        <h2>All-time statistics</h2>
+        <p class="section-meta">Totals across all telemetry stored in the database</p>
+      </div>
+      <div class="cards" id="summary-cards"></div>
+    </section>
     <section class="panels">
       <div class="panel">
-        <h2>Recent events</h2>
+        <div class="panel-heading">
+          <h2>Recent events</h2>
+          <p class="panel-meta" id="events-scope">Latest events</p>
+        </div>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Event</th>
-                <th>Session</th>
-                <th>Model</th>
-                <th>Tokens</th>
-                <th>Cost</th>
-                <th>Duration</th>
-              </tr>
-            </thead>
+            <thead id="events-head"></thead>
             <tbody id="events-body"></tbody>
           </table>
         </div>
@@ -232,7 +311,7 @@ export function telemetryPage(pollMs: number) {
               <tr>
                 <th>Model</th>
                 <th>Calls</th>
-                <th>Tokens</th>
+                <th title="Input tokens / output tokens">In / out</th>
                 <th>Cost</th>
               </tr>
             </thead>
@@ -245,13 +324,65 @@ export function telemetryPage(pollMs: number) {
   <script>
     const pollMs = ${pollMs};
     const themeKey = "opencode-telemetry-theme";
+    const summaryCards = [
+      { label: "Total cost", hint: "Estimated LLM spend across all stored telemetry" },
+      { label: "LLM calls", hint: "Completed LLM completion events" },
+      { label: "Tokens", hint: "Total input and output tokens across all LLM calls" },
+      { label: "Latency", hint: "Average LLM timing per completion" },
+      { label: "Turns", hint: "Completed user turns" },
+      { label: "Tool calls", hint: "Completed tool invocations" },
+    ];
+    const eventHeaders = {
+      "": [
+        ["Time", ""],
+        ["Event", ""],
+        ["Session", ""],
+        ["Target", "Model, tool, or provider"],
+        ["Details", "Tokens, status, or activity"],
+        ["Cost", ""],
+        ["Duration", ""],
+      ],
+      "llm.completion": [
+        ["Time", ""],
+        ["Event", ""],
+        ["Session", ""],
+        ["Model", ""],
+        ["Tokens", "Prompt in · completion out"],
+        ["Cost", ""],
+        ["Latency", "TTFT · generation · total stream"],
+      ],
+      "turn.completed": [
+        ["Time", ""],
+        ["Event", ""],
+        ["Session", ""],
+        ["Model", ""],
+        ["Activity", "Assistant steps and tool calls"],
+        ["Cost", ""],
+        ["Duration", "End-to-end turn time"],
+      ],
+      "tool.used": [
+        ["Time", ""],
+        ["Event", ""],
+        ["Session", ""],
+        ["Tool", ""],
+        ["Status", "Execution result"],
+        ["Cost", ""],
+        ["Duration", "Tool execution time"],
+      ],
+    };
     let live = true;
     let since = 0;
     const rows = new Map();
+    const renderedEventIds = new Set();
     const maxRows = 300;
+    let summaryInitialized = false;
+    let lastModelsJson = "";
+    let lastModelOptionsJson = "";
+    let lastMetaText = "";
 
     const $ = (id) => document.getElementById(id);
     const theme = () => document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    const modelKey = (providerID, modelID) => providerID + "/" + modelID;
 
     function renderThemeButton() {
       const current = theme();
@@ -270,101 +401,313 @@ export function telemetryPage(pollMs: number) {
       $("toggle-live").classList.toggle("active", live);
       $("status-label").textContent = label ?? (live ? "live" : "paused");
       $("status").className = live ? "status live" : "status paused";
+      renderEventsScope(rows.size);
+    }
+
+    function renderEventsScope(count) {
+      const event = $("event-filter").value;
+      const model = $("model-filter").value;
+      const parts = ["Latest " + maxRows + " events"];
+      if (count > 0) parts.push("showing " + count);
+      if (event) parts.push(event);
+      if (model) parts.push(model);
+      parts.push(live ? "updates every " + (pollMs / 1000) + "s" : "paused");
+      $("events-scope").textContent = parts.join(" · ");
     }
     const fmtTime = (ms) => new Date(ms).toLocaleString();
     const fmtNum = (n) => Number(n || 0).toLocaleString();
     const fmtCost = (n) => "$" + Number(n || 0).toFixed(4);
     const fmtMs = (n) => fmtNum(n) + " ms";
+    const fmtDuration = (ms) => {
+      if (ms === undefined || ms === null) return "-";
+      const n = Number(ms);
+      if (!Number.isFinite(n)) return "-";
+      if (n >= 1000) return (Math.round(n / 100) / 10).toFixed(1) + "s";
+      return fmtNum(Math.round(n)) + "ms";
+    };
+    const escapeAttr = (value) => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    const shortSession = (sessionID) => {
+      if (!sessionID || sessionID === "-") return "-";
+      if (sessionID.length <= 14) return sessionID;
+      return "…" + sessionID.slice(-12);
+    };
+    const metric = (key, value, title) =>
+      '<div class="metric" title="' + escapeAttr(title) + '"><span class="metric-k">' + key + '</span><span class="metric-v mono">' + value + "</span></div>";
+    const tokenLine = (key, value, title) =>
+      '<div class="token-line" title="' + escapeAttr(title) + '"><span class="token-k">' + key + '</span><span class="mono">' + value + "</span></div>";
+
+    function renderEventHeaders() {
+      const event = $("event-filter").value;
+      const headers = eventHeaders[event] || eventHeaders[""];
+      $("events-head").innerHTML =
+        "<tr>" +
+        headers
+          .map(([label, hint]) => {
+            const title = hint ? ' title="' + escapeAttr(hint) + '"' : "";
+            const hintHtml = hint ? '<span class="th-hint">' + hint + "</span>" : "";
+            return "<th" + title + ">" + label + hintHtml + "</th>";
+          })
+          .join("") +
+        "</tr>";
+    }
+
+    function renderModelFilter(models) {
+      const select = $("model-filter");
+      const selected = select.value;
+      const keys = models.map((row) => modelKey(row.providerID, row.modelID));
+      const nextJson = JSON.stringify(keys);
+      if (nextJson === lastModelOptionsJson && select.options.length > 0) return;
+      lastModelOptionsJson = nextJson;
+      const options = ['<option value="">All models</option>'].concat(
+        keys.map((key) => '<option value="' + key + '"' + (key === selected ? ' selected' : '') + '>' + key + '</option>'),
+      );
+      select.innerHTML = options.join("");
+    }
 
     function renderSummary(summary) {
-      $("summary-cards").innerHTML = [
-        ["LLM calls", fmtNum(summary.calls)],
-        ["Avg LLM gen", fmtMs(summary.avgDurationMs)],
-        ["Avg TTFT", fmtMs(summary.avgTimeToFirstTokenMs)],
-        ["Avg stream", fmtMs(summary.avgStreamMs)],
-        ["Turns", fmtNum(summary.turns)],
-        ["Avg turn", fmtMs(summary.avgTurnDurationMs)],
-        ["Tool calls", fmtNum(summary.toolCalls)],
-        ["Avg tool", fmtMs(summary.avgToolDurationMs)],
-        ["Input tokens", fmtNum(summary.inputTokens)],
-        ["Output tokens", fmtNum(summary.outputTokens)],
-        ["Total cost", fmtCost(summary.cost)],
-        ["Cache read", fmtNum(summary.cacheReadTokens)],
-      ].map(([label, value]) => '<div class="card"><div class="label">' + label + '</div><div class="value mono">' + value + '</div></div>').join("");
+      const cards = [
+        {
+          value: fmtCost(summary.cost),
+          sub: summary.cacheReadTokens > 0 ? "Cache read " + fmtNum(summary.cacheReadTokens) : "No cache reads",
+        },
+        {
+          value: fmtNum(summary.calls),
+          sub: "Avg gen " + fmtDuration(summary.avgDurationMs),
+        },
+        {
+          value: fmtNum(summary.inputTokens) + " / " + fmtNum(summary.outputTokens),
+          sub: "In / out",
+        },
+        {
+          value: fmtDuration(summary.avgTimeToFirstTokenMs),
+          sub: "Gen " + fmtDuration(summary.avgDurationMs) + " · stream " + fmtDuration(summary.avgStreamMs),
+        },
+        {
+          value: fmtNum(summary.turns),
+          sub: summary.turns > 0 ? "Avg " + fmtDuration(summary.avgTurnDurationMs) + " per turn" : "No turns yet",
+        },
+        {
+          value: fmtNum(summary.toolCalls),
+          sub: summary.toolCalls > 0 ? "Avg " + fmtDuration(summary.avgToolDurationMs) + " per call" : "No tool calls yet",
+        },
+      ];
+
+      if (!summaryInitialized) {
+        $("summary-cards").innerHTML = summaryCards
+          .map(
+            (card, index) =>
+              '<div class="card" data-index="' +
+              index +
+              '" title="' +
+              escapeAttr(card.hint) +
+              '"><div class="label">' +
+              card.label +
+              '</div><div class="value mono"></div><div class="card-sub"></div></div>',
+          )
+          .join("");
+        summaryInitialized = true;
+      }
+
+      $("summary-cards").querySelectorAll(".card").forEach((el, index) => {
+        const card = cards[index];
+        if (!card) return;
+        const value = el.querySelector(".value");
+        const sub = el.querySelector(".card-sub");
+        if (value && value.textContent !== card.value) value.textContent = card.value;
+        if (sub && sub.textContent !== card.sub) sub.textContent = card.sub;
+      });
 
       const models = summary.byModel || [];
+      const modelsJson = JSON.stringify(models);
+      if (modelsJson === lastModelsJson) return;
+      lastModelsJson = modelsJson;
       $("models-body").innerHTML = models.length
-        ? models.map((row) => '<tr><td class="mono">' + row.providerID + '/' + row.modelID + '</td><td>' + fmtNum(row.calls) + '</td><td class="mono">' + fmtNum(row.inputTokens) + ' / ' + fmtNum(row.outputTokens) + '</td><td class="mono">' + fmtCost(row.cost) + '</td></tr>').join("")
+        ? models
+            .map(
+              (row) =>
+                '<tr><td class="mono">' +
+                row.providerID +
+                "/" +
+                row.modelID +
+                '</td><td class="mono">' +
+                fmtNum(row.calls) +
+                '</td><td><div class="token-pair">' +
+                tokenLine("In", fmtNum(row.inputTokens), "Input tokens") +
+                tokenLine("Out", fmtNum(row.outputTokens), "Output tokens") +
+                '</div></td><td class="mono">' +
+                fmtCost(row.cost) +
+                "</td></tr>",
+            )
+            .join("")
         : '<tr><td colspan="4" class="empty">No model data yet</td></tr>';
     }
 
     function rowHtml(row) {
       const p = row.properties || {};
       const session = p.sessionID || "-";
-      let model = "-";
-      let tokens = "-";
+      const sessionLabel = shortSession(session);
+      const sessionTitle = session === sessionLabel ? "" : ' title="' + escapeAttr(session) + '"';
+      let target = "-";
+      let detail = "-";
       let cost = "-";
-      const duration =
-        row.event === "llm.completion"
-          ? [
-              p.timeToFirstTokenMs === undefined ? "-" : fmtMs(p.timeToFirstTokenMs),
-              p.durationMs === undefined ? "-" : fmtMs(p.durationMs),
-              p.streamMs === undefined ? "-" : fmtMs(p.streamMs),
-            ].join(" / ")
-          : p.durationMs === undefined
-            ? "-"
-            : fmtMs(p.durationMs);
+      let timing = "-";
+
       if (row.event === "llm.completion") {
-        model = p.providerID && p.modelID ? p.providerID + "/" + p.modelID : "-";
-        tokens = fmtNum(p.inputTokens) + " / " + fmtNum(p.outputTokens);
+        target = p.providerID && p.modelID ? p.providerID + "/" + p.modelID : "-";
+        detail =
+          '<div class="token-pair">' +
+          tokenLine("In", fmtNum(p.inputTokens), "Prompt and context tokens sent to the model") +
+          tokenLine("Out", fmtNum(p.outputTokens), "Completion tokens returned by the model") +
+          "</div>";
         cost = p.cost === undefined ? "-" : fmtCost(p.cost);
+        timing =
+          '<div class="metrics">' +
+          metric("TTFT", fmtDuration(p.timeToFirstTokenMs), "Time from request start to first token") +
+          metric("Gen", fmtDuration(p.durationMs), "Active model generation time") +
+          metric("Total", fmtDuration(p.streamMs), "End-to-end stream duration") +
+          "</div>";
       } else if (row.event === "tool.used") {
-        model = p.tool || "-";
-        tokens = p.status || "-";
+        target = p.tool || "-";
+        detail = '<span class="pill">' + (p.status || "-") + "</span>";
+        timing = p.durationMs === undefined ? "-" : '<span class="mono detail-line">' + fmtDuration(p.durationMs) + "</span>";
       } else if (row.event === "turn.completed") {
-        model = p.providerID && p.modelID ? p.providerID + "/" + p.modelID : "-";
-        tokens =
+        target = p.providerID && p.modelID ? p.providerID + "/" + p.modelID : "-";
+        detail =
+          '<div class="detail-line">' +
           (p.assistantSteps === undefined ? "-" : fmtNum(p.assistantSteps) + " steps") +
           " · " +
-          (p.toolCalls === undefined ? "-" : fmtNum(p.toolCalls) + " tools");
+          (p.toolCalls === undefined ? "-" : fmtNum(p.toolCalls) + " tools") +
+          "</div>";
+        timing = p.durationMs === undefined ? "-" : '<span class="mono detail-line">' + fmtDuration(p.durationMs) + "</span>";
+      } else {
+        target = p.providerID && p.modelID ? p.providerID + "/" + p.modelID : p.tool || "-";
+        if (p.inputTokens !== undefined || p.outputTokens !== undefined) {
+          detail = fmtNum(p.inputTokens) + " in · " + fmtNum(p.outputTokens) + " out";
+        }
+        if (p.durationMs !== undefined) timing = '<span class="mono detail-line">' + fmtDuration(p.durationMs) + "</span>";
       }
-      return '<tr data-id="' + row.id + '"><td class="mono">' + fmtTime(row.time_created) + '</td><td><span class="pill">' + row.event + '</span></td><td class="mono">' + session + '</td><td class="mono">' + model + '</td><td class="mono">' + tokens + '</td><td class="mono">' + cost + '</td><td class="mono">' + duration + '</td></tr>';
+
+      return (
+        '<tr data-id="' +
+        row.id +
+        '"><td class="mono">' +
+        fmtTime(row.time_created) +
+        '</td><td><span class="pill">' +
+        row.event +
+        '</span></td><td class="mono session-cell"' +
+        sessionTitle +
+        ">" +
+        sessionLabel +
+        '</td><td class="mono">' +
+        target +
+        "</td><td>" +
+        detail +
+        '</td><td class="mono">' +
+        cost +
+        "</td><td>" +
+        timing +
+        "</td></tr>"
+      );
     }
 
-    function renderEvents() {
+    function resetEventsView() {
+      renderedEventIds.clear();
+      $("events-body").innerHTML = "";
+    }
+
+    function renderEvents(full) {
       const list = Array.from(rows.values()).sort((a, b) => b.id - a.id).slice(0, maxRows);
-      $("events-body").innerHTML = list.length
-        ? list.map(rowHtml).join("")
-        : '<tr><td colspan="7" class="empty">Waiting for telemetry events…</td></tr>';
+      const body = $("events-body");
+
+      if (full) {
+        resetEventsView();
+        body.innerHTML = list.length
+          ? list.map(rowHtml).join("")
+          : '<tr><td colspan="7" class="empty">Waiting for telemetry events…</td></tr>';
+        for (const row of list) renderedEventIds.add(row.id);
+        return;
+      }
+
+      if (!list.length) {
+        if (!body.children.length) {
+          body.innerHTML = '<tr><td colspan="7" class="empty">Waiting for telemetry events…</td></tr>';
+        }
+        return;
+      }
+
+      const empty = body.querySelector(".empty");
+      if (empty) empty.remove();
+
+      const fresh = list.filter((row) => !renderedEventIds.has(row.id));
+      if (!fresh.length) return;
+
+      for (const row of fresh.sort((a, b) => b.id - a.id)) {
+        body.insertAdjacentHTML("afterbegin", rowHtml(row));
+        renderedEventIds.add(row.id);
+      }
+
+      while (body.children.length > maxRows) {
+        const last = body.lastElementChild;
+        if (!last || !last.dataset.id) break;
+        renderedEventIds.delete(Number(last.dataset.id));
+        last.remove();
+      }
+    }
+
+    function resetFilters() {
+      since = 0;
+      rows.clear();
+      resetEventsView();
+      lastModelsJson = "";
     }
 
     async function refresh() {
       const event = $("event-filter").value;
-      const params = new URLSearchParams({ since: String(since), limit: "200" });
+      const model = $("model-filter").value;
+      const backfill = since === 0;
+      const params = new URLSearchParams();
+      if (backfill) params.set("latest", String(maxRows));
+      if (!backfill) {
+        params.set("since", String(since));
+        params.set("limit", "200");
+      }
       if (event) params.set("event", event);
+      if (model) params.set("model", model);
 
-      const [eventsRes, summaryRes, metaRes] = await Promise.all([
+      const summaryParams = model ? "?" + new URLSearchParams({ model }) : "";
+      const [eventsRes, summaryRes, modelsRes, metaRes] = await Promise.all([
         fetch("/api/telemetry?" + params),
-        fetch("/api/summary"),
+        fetch("/api/summary" + summaryParams),
+        fetch("/api/models"),
         fetch("/api/meta"),
       ]);
 
       const events = await eventsRes.json();
       const summary = await summaryRes.json();
+      const models = await modelsRes.json();
       const meta = await metaRes.json();
 
-      $("db-path").textContent = meta.dbPath + " · poll " + meta.pollMs + "ms · latest id " + meta.latestId;
+      const metaText = meta.dbPath + " · poll " + meta.pollMs + "ms · latest id " + meta.latestId;
+      if (metaText !== lastMetaText) {
+        $("db-path").textContent = metaText;
+        lastMetaText = metaText;
+      }
+
+      renderModelFilter(models.items || []);
       renderSummary(summary);
 
+      let added = 0;
       for (const row of events.items || []) {
         rows.set(row.id, row);
         since = Math.max(since, row.id);
+        added += 1;
       }
+      if (backfill && added === 0) since = meta.latestId;
       while (rows.size > maxRows) {
         const oldest = Math.min(...rows.keys());
         rows.delete(oldest);
       }
-      renderEvents();
+      renderEvents(backfill || (added === 0 && renderedEventIds.size === 0));
       renderLiveState(live ? "live" : "paused");
     }
 
@@ -378,9 +721,14 @@ export function telemetryPage(pollMs: number) {
     });
 
     $("event-filter").addEventListener("change", () => {
-      since = 0;
-      rows.clear();
-      renderEvents();
+      renderEventHeaders();
+      resetFilters();
+      if (live) refresh();
+    });
+
+    $("model-filter").addEventListener("change", () => {
+      resetFilters();
+      lastModelsJson = "";
       if (live) refresh();
     });
 
@@ -392,6 +740,7 @@ export function telemetryPage(pollMs: number) {
     }
 
     renderThemeButton();
+    renderEventHeaders();
     renderLiveState("polling");
     refresh();
     loop();

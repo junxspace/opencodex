@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Database } from "@opencode-ai/core/database/database"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Database as BunSqlite } from "bun:sqlite"
-import { latestId, list, summary } from "../../src/telemetry/query"
+import { latestId, list, listModels, summary } from "../../src/telemetry/query"
 import { tmpdir } from "../fixture/fixture"
 
 function seed(path: string) {
@@ -102,7 +102,16 @@ describe("telemetry query", () => {
 
     expect(latestId()).toBe(4)
     expect(list({ since: 1, event: "llm.completion" })).toHaveLength(1)
+    expect(list({ since: 0, model: "openai/gpt-test" })).toHaveLength(1)
     expect(list({ since: 0 })).toHaveLength(4)
+    expect(list({ latest: 2 }).map((row) => row.id)).toEqual([4, 3])
+    expect(list({ latest: 1, event: "llm.completion" })[0]?.id).toBe(2)
+    expect(listModels()).toEqual(
+      expect.arrayContaining([
+        { providerID: "openai", modelID: "gpt-test" },
+        { providerID: "anthropic", modelID: "claude-test" },
+      ]),
+    )
 
     const stats = summary()
     expect(stats.calls).toBe(2)
@@ -122,5 +131,12 @@ describe("telemetry query", () => {
         expect.objectContaining({ providerID: "anthropic", modelID: "claude-test", calls: 1 }),
       ]),
     )
+
+    const filtered = summary({ model: "openai/gpt-test" })
+    expect(filtered.calls).toBe(1)
+    expect(filtered.inputTokens).toBe(10)
+    expect(filtered.byModel).toEqual([
+      expect.objectContaining({ providerID: "openai", modelID: "gpt-test", calls: 1 }),
+    ])
   })
 })

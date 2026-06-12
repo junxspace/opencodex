@@ -1486,12 +1486,22 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
 
   const childShortcut = useCommandShortcut("session.child.first")
   const backgroundShortcut = useCommandShortcut("session.background")
+  const lastTextPartIndex = createMemo(() => {
+    for (let i = props.parts.length - 1; i >= 0; i--) {
+      const part = props.parts[i]
+      if (part.type === "text" && part.text.trim() && !part.synthetic) return i
+    }
+    return -1
+  })
 
   return (
     <>
       <For each={props.parts}>
         {(part, index) => {
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
+          const afterAnswer = createMemo(
+            () => part.type === "reasoning" && lastTextPartIndex() >= 0 && index() > lastTextPartIndex(),
+          )
           return (
             <Show when={component()}>
               <Dynamic
@@ -1499,6 +1509,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
                 component={component()}
                 part={part as any}
                 message={props.message}
+                afterAnswer={afterAnswer()}
               />
             </Show>
           )
@@ -1577,7 +1588,12 @@ const PART_MAPPING = {
 
 const INLINE_TOOL_ICON_WIDTH = 2
 
-function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
+function ReasoningPart(props: {
+  last: boolean
+  part: ReasoningPart
+  message: AssistantMessage
+  afterAnswer?: boolean
+}) {
   const { theme } = useTheme()
   const ctx = use()
   // Collapsed by default in hide mode: a single line throughout, so the
@@ -1603,9 +1619,12 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     if (!inMinimal()) return
     setExpanded((prev) => !prev)
   }
+  // Late reasoning parts from follow-up provider steps land after the visible
+  // answer; in hide mode they only add noise as extra "+ Thought: Nms" rows.
+  const hideAfterAnswer = createMemo(() => inMinimal() && isDone() && props.afterAnswer === true)
 
   return (
-    <Show when={content()}>
+    <Show when={content() && !hideAfterAnswer()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexDirection="column" flexShrink={0}>
         <box onMouseUp={toggle}>
           <ReasoningHeader
