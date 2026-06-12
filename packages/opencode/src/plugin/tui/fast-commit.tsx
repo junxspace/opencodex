@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createSignal, type JSX } from "solid-js"
-import { handleFastCommit } from "@/cli/cmd/fast-commit"
+import { handleFastCommit, type FastCommitResult } from "@/cli/cmd/fast-commit"
 import { resolveCliStyle } from "@/cli/theme"
 import type { CommitIntent } from "@/commit-message/analyze-intents"
 import { Config } from "@/config/config"
@@ -27,10 +27,37 @@ function message(err: unknown) {
   return String(err)
 }
 
+function plainText(text: string) {
+  return text.replace(/\x1b\[[0-9;]*m/g, "")
+}
+
+function statusOverviewLine(line: string) {
+  const trimmed = plainText(line).trim()
+  if (!trimmed) return false
+  if (trimmed.includes("⚡ fast-commit")) return true
+  if (trimmed.includes("working tree")) return true
+  if (trimmed.startsWith("📦") || trimmed.startsWith("📝") || trimmed.startsWith("✨")) return true
+  if (trimmed.startsWith("· ") || trimmed.startsWith("🔒 ")) return true
+  if (trimmed === "· none") return true
+  if (/^─{8,}$/.test(trimmed)) return true
+  return false
+}
+
+function dialogMessage(lines: string[], failed: boolean) {
+  const filtered = failed
+    ? lines
+    : lines.filter((line) => {
+        if (!line.trim()) return false
+        return !statusOverviewLine(line)
+      })
+  const text = filtered.map(plainText).join("\n").replace(/\n{3,}/g, "\n\n").trim()
+  return text || plainText(lines.join("\n")).trim()
+}
+
 function alert(api: TuiPluginApi, title: string, message: string) {
   return new Promise<void>((resolve) => {
     let done = false
-    api.ui.dialog.setSize("large")
+    api.ui.dialog.setSize("xlarge")
     api.ui.dialog.replace(
       () =>
         api.ui.DialogAlert({
@@ -129,13 +156,15 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
 
   api.ui.toast({ variant: "info", message: `正在执行 ${title}...`, duration: 120_000 })
 
+  let result: FastCommitResult = { commitCount: 0, pushed: false }
+
   await AppRuntime.runPromise(
     Effect.gen(function* () {
       const store = yield* InstanceStore.Service
       const ctx = yield* store.load({ directory: dir })
       const cfg = yield* Config.Service.use((svc) => svc.get()).pipe(Effect.provideService(InstanceRef, ctx))
       const style = yield* Effect.promise(() => resolveCliStyle({ directory: dir, force: false }))
-      yield* Effect.promise(() =>
+      result = yield* Effect.promise(() =>
         handleFastCommit({
           dir,
           push,
@@ -165,8 +194,8 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
     }),
   )
 
-  if (lines.length > 0) {
-    await alert(api, failed ? `${title} failed` : title, lines.join("\n"))
+  if (lines.length > 0 || result.commitCount > 0) {
+    await alert(api, failed ? `${title} failed` : title, dialogMessage(lines, failed))
   }
 }
 
