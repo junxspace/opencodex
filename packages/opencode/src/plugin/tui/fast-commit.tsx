@@ -1,14 +1,17 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createSignal, type JSX } from "solid-js"
-import { handle } from "@/cli/cmd/commit"
+import { handleFastCommit } from "@/cli/cmd/fast-commit"
+import type { CommitIntent } from "@/commit-message/analyze-intents"
+import { Config } from "@/config/config"
+import { FAST_COMMIT_SYSTEM_PROMPT } from "@/commit-message/prompt"
+import { AppRuntime } from "@/effect/app-runtime"
+import { InstanceRef } from "@/effect/instance-ref"
+import { InstanceStore } from "@/project/instance-store"
+import type { InstanceContext } from "@/project/instance-context"
+import { Effect } from "effect"
 
 type Action = "commit" | "edit" | "regenerate" | "cancel"
-type PushAction = "push" | "cancel"
-type Intent = {
-  files: string[]
-  description: string
-}
 
 type Item = {
   title: string
@@ -16,7 +19,7 @@ type Item = {
   description?: string
 }
 
-const id = "internal:opencode-commit"
+const id = "internal:opencode-fast-commit"
 
 function message(err: unknown) {
   if (err instanceof Error) return err.message
@@ -57,35 +60,7 @@ function prompt(
   })
 }
 
-function confirm(api: TuiPluginApi, title: string, text: string) {
-  return new Promise<boolean>((resolve) => {
-    let done = false
-    api.ui.dialog.replace(
-      () =>
-        api.ui.DialogConfirm({
-          title,
-          message: text,
-          onConfirm() {
-            done = true
-            api.ui.dialog.clear()
-            resolve(true)
-          },
-          onCancel() {
-            done = true
-            api.ui.dialog.clear()
-            resolve(false)
-          },
-        }),
-      () => {
-        if (done) return
-        done = true
-        resolve(false)
-      },
-    )
-  })
-}
-
-function select(api: TuiPluginApi, msg: string, intent?: Intent) {
+function select(api: TuiPluginApi, msg: string, intent: CommitIntent, index: number, total: number) {
   const options: Item[] = [
     { title: "Commit", value: "commit", description: "Create the commit" },
     { title: "Edit", value: "edit", description: "Edit the generated message" },
@@ -97,7 +72,7 @@ function select(api: TuiPluginApi, msg: string, intent?: Intent) {
     api.ui.dialog.replace(
       () =>
         api.ui.DialogSelect({
-          title: "Commit this change?",
+          title: `Commit this change? (${index}/${total})`,
           options,
           onSelect(item) {
             done = true
@@ -111,54 +86,66 @@ function select(api: TuiPluginApi, msg: string, intent?: Intent) {
         resolve("cancel")
       },
     )
-    api.ui.toast({ variant: "info", message: preview(msg, intent), duration: 10_000 })
+    const files = intent.files.length ? `\nFiles: ${intent.files.join(", ")}` : ""
+    api.ui.toast({ variant: "info", message: `Commit message: ${msg.split("\n")[0]}${files}`, duration: 10_000 })
   })
 }
 
-function preview(msg: string, intent?: Intent) {
-  const files = intent?.files.length ? `\nFiles: ${intent.files.join(", ")}` : ""
-  return `Commit message: ${msg.split("\n")[0]}${files}`
-}
-
-async function run(api: TuiPluginApi) {
+async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
   const dir = api.state.path.directory || process.cwd()
   const output = (text: string) => {
     if (!text.trim()) return
     api.ui.toast({ variant: "info", message: text, duration: 3000 })
   }
 
-  await handle({
-    dir,
-    yes: false,
-    output,
-    error: (text) => api.ui.toast({ variant: "error", message: text }),
-    exit: () => {},
-    selectPush: async (): Promise<PushAction> => {
-      const ok = await confirm(api, "Push current branch?", "No changes found. Push current branch?")
-      return ok ? "push" : "cancel"
-    },
-    selectAction: (msg, intent) => select(api, msg, intent),
-    edit: (msg) =>
-      prompt(api, "Edit commit message", { value: msg, placeholder: "Commit message" }).then((value) => value?.trim()),
-  })
+  await AppRuntime.runPromise(
+    Effect.gen(function* () {
+      const store = yield* InstanceStore.Service
+      const ctx = yield* store.load({ directory: dir })
+      const cfg = yield* Config.Service.use((svc) => svc.get()).pipe(Effect.provideService(InstanceRef, ctx))
+      yield* Effect.promise(() =>
+        handleFastCommit({
+          dir,
+          push,
+          confirm,
+          output,
+          error: (text) => api.ui.toast({ variant: "error", message: text }),
+          exit: () => {},
+          onProgress: (current, total) => {
+            api.ui.toast({ variant: "info", message: `正在提交 ${current}/${total}`, duration: 2000 })
+          },
+          selectAction: (msg, intent, index, total) => select(api, msg, intent, index, total),
+          edit: (msg) =>
+            prompt(api, "Edit commit message", { value: msg, placeholder: "Commit message" }).then((value) =>
+              value?.trim(),
+            ),
+          prompt: cfg.commit_message?.prompt || FAST_COMMIT_SYSTEM_PROMPT,
+          model: cfg.commit_message?.model,
+          lockTemplate: cfg.commit_message?.lock_template,
+          instance: ctx as InstanceContext,
+        }),
+      )
+      yield* store.dispose(ctx)
+    }),
+  )
 }
 
-const tui: TuiPlugin = async (api) => {
+function register(api: TuiPluginApi, name: string, title: string, slashName: string, push: boolean) {
   const [busy, setBusy] = createSignal(false)
   api.keymap.registerLayer({
     commands: [
       {
-        name: "opencode.commit",
-        title: "Commit changes",
-        desc: "Generate a commit message and commit changes",
+        name,
+        title,
+        desc: title,
         category: "Git",
         namespace: "palette",
-        slashName: "commit",
+        slashName,
         enabled: () => !busy(),
         run() {
           if (busy()) return
           setBusy(true)
-          void run(api)
+          void run(api, push, false)
             .then(() => {
               api.ui.dialog.clear()
             })
@@ -171,8 +158,13 @@ const tui: TuiPlugin = async (api) => {
         },
       },
     ],
-    bindings: api.tuiConfig.keybinds.gather("opencode.commit", ["opencode.commit"]),
+    bindings: api.tuiConfig.keybinds.gather(name, [name]),
   })
+}
+
+const tui: TuiPlugin = async (api) => {
+  register(api, "opencode.fast-commit", "Fast commit changes", "fast-commit", false)
+  register(api, "opencode.fast-commit-and-push", "Fast commit and push", "fast-commit-and-push", true)
 }
 
 const plugin: TuiPluginModule & { id: string } = { id, tui }

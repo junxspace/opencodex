@@ -1,2 +1,6 @@
+export { analyzeIntents } from "./analyze-intents"
 export { generateCommitMessage } from "./generate"
+export { attachLockFiles, briefLockMessage, partitionLockFiles } from "./lock"
+export { FAST_COMMIT_SYSTEM_PROMPT, INTENT_ANALYSIS_PROMPT } from "./prompt"
+export type { CommitIntent } from "./analyze-intents"
 export type { CommitMessageRequest, CommitMessageResponse, GitContext, FileChange } from "./types"

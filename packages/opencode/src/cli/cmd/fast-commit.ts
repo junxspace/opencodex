@@ -7,8 +7,11 @@ import { UI } from "../ui"
 import { Config } from "@/config/config"
 import { InstanceRef } from "@/effect/instance-ref"
 import { invocationDirectory } from "../invocation-directory"
+import { analyzeIntents, type CommitIntent } from "@/commit-message/analyze-intents"
 import { generateCommitMessage } from "@/commit-message"
-import { getGitContext, isLockFile } from "@/commit-message/git-context"
+import { briefLockMessage, partitionLockFiles } from "@/commit-message/lock"
+import { isLockFile } from "@/commit-message/git-context"
+import { FAST_COMMIT_SYSTEM_PROMPT } from "@/commit-message/prompt"
 import type { CommitMessageRequest } from "@/commit-message/types"
 
 export type Status = {
@@ -24,33 +27,24 @@ type GitResult = {
 }
 
 type Action = "commit" | "edit" | "regenerate" | "cancel"
-type PushAction = "push" | "cancel"
-type Intent = {
-  files: string[]
-  description: string
-}
-type IntentResult = {
-  intents: Intent[]
-}
 
 type Args = {
   dir?: string
-  all?: boolean
-  includeUntracked?: boolean
-  message?: string
-  yes?: boolean
   push?: boolean
+  confirm?: boolean
   dryRun?: boolean
+  stagedOnly?: boolean
   previous?: string
   prompt?: string
   model?: string
+  lockTemplate?: string
   instance?: CommitMessageRequest["instance"]
   git?: (args: string[], cwd: string) => GitResult
   generate?: typeof generateCommitMessage
-  analyzeIntent?: (input: { path: string; selectedFiles: string[] }) => Promise<IntentResult>
-  selectAction?: (message: string, intent?: Intent) => Promise<Action>
-  selectPush?: () => Promise<PushAction>
+  analyze?: typeof analyzeIntents
+  selectAction?: (message: string, intent: CommitIntent, index: number, total: number) => Promise<Action>
   edit?: (message: string) => Promise<string | undefined>
+  onProgress?: (current: number, total: number, intent: CommitIntent) => void
   output?: (text: string) => void
   error?: (text: string) => void
   exit?: (code: number) => void
@@ -59,13 +53,10 @@ type Args = {
 
 type CliArgs = {
   dir?: string
-  all?: boolean
-  "include-untracked"?: boolean
-  message?: string
-  previous?: string
-  yes?: boolean
-  push?: boolean
+  confirm?: boolean
   "dry-run"?: boolean
+  "staged-only"?: boolean
+  previous?: string
 }
 
 function git(args: string[], cwd: string): GitResult {
@@ -149,54 +140,13 @@ function empty(status: Status) {
   return status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0
 }
 
-function files(status: Status) {
+function allFiles(status: Status) {
   return [...new Set([...status.staged, ...status.unstaged, ...status.untracked])]
 }
 
-export function resolveStageOptions(
-  status: Status,
-  options: { all?: boolean; includeUntracked?: boolean; yes?: boolean; push?: boolean },
-) {
-  const autoAll = status.staged.length === 0 && (options.yes === true || options.push === true)
-  return {
-    all: options.all === true || autoAll,
-    includeUntracked: options.includeUntracked === true,
-  }
-}
-
-export function intentFiles(status: Status, options: { all?: boolean; includeUntracked?: boolean }) {
-  if (status.staged.length > 0) return status.staged
-  if (options.all) return files(status)
-  if (options.includeUntracked) return [...new Set([...status.unstaged, ...status.untracked])]
-  return []
-}
-
-export function noCommittableMessage(
-  status: Status,
-  options: { all?: boolean; includeUntracked?: boolean },
-  selected: string[],
-) {
-  if (status.staged.length === 0 && !options.all && !options.includeUntracked) {
-    return "No staged changes. Stage files with git add or pass --all to include unstaged changes."
-  }
-  if (selected.length > 0 && selected.every(isLockFile)) {
-    return "Only lock file changes found. Lock files are excluded from AI commit generation."
-  }
-  return "No committable changes found."
-}
-
-async function analyze(input: { path: string; selectedFiles: string[] }): Promise<IntentResult> {
-  const ctx = await getGitContext(input.path, input.selectedFiles)
-  const commitFiles = ctx.files.map((file) => file.path)
-  if (commitFiles.length === 0) return { intents: [] }
-  return {
-    intents: [
-      {
-        files: commitFiles,
-        description: "commit related changes",
-      },
-    ],
-  }
+export function selectedFiles(status: Status, stagedOnly?: boolean) {
+  if (stagedOnly) return status.staged
+  return allFiles(status)
 }
 
 function check(result: GitResult, error: (text: string) => void, exit: (code: number) => void) {
@@ -222,23 +172,7 @@ function runPush(
   return true
 }
 
-async function selectPush(): Promise<PushAction> {
-  const result = await prompts.select({
-    message: "No changes found. Push current branch?",
-    options: [
-      { value: "push", label: "Push" },
-      { value: "cancel", label: "Cancel" },
-    ],
-  })
-  if (prompts.isCancel(result)) return "cancel"
-  return result as PushAction
-}
-
 const PREVIEW_FILE_LIMIT = 15
-
-function section(title: string, body: string) {
-  return `${title}\n${body}`
-}
 
 function previewFiles(files: string[]) {
   if (files.length <= PREVIEW_FILE_LIMIT) return files.map((file) => `  ${file}`).join("\n")
@@ -247,19 +181,17 @@ function previewFiles(files: string[]) {
   return shown.join("\n")
 }
 
-export function preview(message: string, intent?: Intent) {
+export function preview(message: string, intent?: CommitIntent) {
   const [subject = "", ...body] = message.trim().split("\n")
   const parts = [
-    section("Commit message", [`  ${subject}`, ...body.filter((line) => line.trim()).map((line) => `  ${line}`)].join("\n")),
+    `Commit message\n  ${subject}${body.length ? `\n${body.filter((line) => line.trim()).map((line) => `  ${line}`).join("\n")}` : ""}`,
   ]
-  if (intent) {
-    parts.push(section("Files to commit", previewFiles(intent.files)))
-  }
+  if (intent) parts.push(`Files to commit\n${previewFiles(intent.files)}`)
   return parts.join("\n\n")
 }
 
-async function selectAction(message: string, intent?: Intent): Promise<Action> {
-  prompts.note(preview(message, intent), "Commit preview")
+async function selectAction(message: string, intent: CommitIntent, index: number, total: number): Promise<Action> {
+  prompts.note(preview(message, intent), `Commit preview (${index}/${total})`)
   const result = await prompts.select({
     message: "Commit this change?",
     options: [
@@ -282,7 +214,18 @@ async function edit(message: string) {
   return String(result).trim()
 }
 
-export async function handle(args: Args) {
+function messageForIntent(intent: CommitIntent, lockTemplate?: string) {
+  if (intent.message) return intent.message
+  const { locks, nonLocks } = partitionLockFiles(intent.files)
+  if (nonLocks.length === 0 && locks.length > 0) return briefLockMessage(locks, lockTemplate)
+  return undefined
+}
+
+function nonLockFiles(files: string[]) {
+  return files.filter((file) => !isLockFile(file))
+}
+
+export async function handleFastCommit(args: Args) {
   const root = invocationDirectory(args.dir)
   const run = args.git ?? git
   const out = args.output ?? ((text: string) => process.stdout.write(text + "\n"))
@@ -297,14 +240,9 @@ export async function handle(args: Args) {
   out(ui.statusSection("Unstaged changes", status.unstaged))
   out(ui.statusSection("Untracked files", status.untracked))
 
-  if (empty(status)) {
-    out(ui.info("No changes found"))
-    const action = args.yes ? "push" : await (args.selectPush ?? selectPush)()
-    if (action === "cancel") {
-      out(ui.info("Cancelled"))
-      return
-    }
-    if (!runPush(run, root, out, error, exit, ui)) return
+  const committable = selectedFiles(status, args.stagedOnly)
+  if (empty(status) || committable.length === 0) {
+    out(ui.info("没有可提交的变更"))
     return
   }
 
@@ -313,25 +251,16 @@ export async function handle(args: Args) {
   const staged = run(["diff", "--staged"], root)
   if (!check(staged, error, exit)) return
 
-  const stageOptions = resolveStageOptions(status, {
-    all: args.all,
-    includeUntracked: args.includeUntracked,
-    yes: args.yes,
-    push: args.push,
+  const analysis = await (args.analyze ?? analyzeIntents)({
+    path: root,
+    selectedFiles: committable,
+    model: args.model,
+    instance: args.instance,
+    lockTemplate: args.lockTemplate,
   })
-  const selected = intentFiles(status, stageOptions)
-  const committable = selected.filter((file) => !isLockFile(file))
-  if (committable.length === 0) {
-    error(noCommittableMessage(status, stageOptions, selected))
-    exit(1)
-    return
-  }
-
-  const analysis = await (args.analyzeIntent ?? analyze)({ path: root, selectedFiles: committable })
   const intents = analysis.intents.filter((intent) => intent.files.length > 0)
   if (intents.length === 0) {
-    error(noCommittableMessage(status, stageOptions, selected))
-    exit(1)
+    out(ui.info("没有可提交的变更"))
     return
   }
 
@@ -342,8 +271,9 @@ export async function handle(args: Args) {
 
   const gen = args.generate ?? generateCommitMessage
   let committed = false
-  for (const intent of intents) {
-    const known = new Set(files(status))
+  for (const [index, intent] of intents.entries()) {
+    args.onProgress?.(index + 1, intents.length, intent)
+    const known = new Set(allFiles(status))
     const invalid = intent.files.filter((file) => !known.has(file))
     if (invalid.length > 0) {
       error(`Intent references files that are not changed: ${invalid.join(", ")}`)
@@ -356,39 +286,35 @@ export async function handle(args: Args) {
       if (!check(result, error, exit)) return
     }
 
-    let msg = args.message ?? intent.description
+    let msg = messageForIntent(intent, args.lockTemplate)
     let prev = args.previous
-    if (!args.message) {
+    if (!msg) {
       const result = await gen({
         path: root,
-        selectedFiles: intent.files,
+        selectedFiles: nonLockFiles(intent.files),
         previousMessage: prev,
         prompt: args.prompt,
         model: args.model,
         instance: args.instance,
-        intent,
+        intent: { files: intent.files, description: intent.description },
       })
       msg = result.message
     }
-    if (!msg) {
+    if (!msg?.trim()) {
       error("Commit message is empty")
       exit(1)
       return
     }
 
     while (true) {
-      if (!msg.trim()) {
-        error("Commit message is empty")
-        exit(1)
-        return
-      }
-
-      if (args.yes || args.dryRun) {
+      if (args.confirm || args.dryRun) {
         out("")
         out(ui.commitMessageBlock(msg))
       }
 
-      const action = args.yes || args.dryRun ? "commit" : await (args.selectAction ?? selectAction)(msg, intent)
+      const action = args.confirm || args.dryRun
+        ? await (args.selectAction ?? selectAction)(msg, intent, index + 1, intents.length)
+        : "commit"
       if (action === "cancel") {
         out(ui.info("Cancelled"))
         return
@@ -406,11 +332,12 @@ export async function handle(args: Args) {
         prev = msg
         const result = await gen({
           path: root,
-          selectedFiles: intent.files,
+          selectedFiles: nonLockFiles(intent.files),
           previousMessage: prev,
           prompt: args.prompt,
           model: args.model,
-          intent,
+          instance: args.instance,
+          intent: { files: intent.files, description: intent.description },
         })
         msg = result.message
         continue
@@ -418,7 +345,6 @@ export async function handle(args: Args) {
 
       if (args.dryRun) {
         out(ui.info("Dry run: commit not created"))
-        if (args.push) out(ui.info("Dry run: push skipped"))
         break
       }
 
@@ -438,7 +364,7 @@ export async function handle(args: Args) {
       out("")
       const text = result.stdout.trim()
       if (text) out(ui.gitOutput(text))
-      if (!text) out(ui.success("Committed"))
+      if (!text) out(ui.success(`Committed (${index + 1}/${intents.length})`))
       committed = true
       break
     }
@@ -447,61 +373,63 @@ export async function handle(args: Args) {
   if (args.push && committed) runPush(run, root, out, error, exit, ui)
 }
 
-export const CommitCommand = effectCmd<CliArgs, void>({
-  command: "commit",
-  describe: "generate a commit message and commit staged changes",
+function fastCommitBuilder(yargs: Argv) {
+  return yargs
+    .option("dir", { type: "string", describe: "directory to run in" })
+    .option("confirm", { type: "boolean", describe: "confirm each commit interactively" })
+    .option("dry-run", { type: "boolean", describe: "preview without creating commits" })
+    .option("staged-only", { type: "boolean", describe: "only commit already staged files" })
+    .option("previous", { type: "string", describe: "previous message to avoid when regenerating" })
+}
+
+export const FastCommitCommand = effectCmd<CliArgs, void>({
+  command: "fast-commit",
+  describe: "split changes into commits with AI-generated Chinese messages",
   directory: (args) => invocationDirectory(args.dir),
-  builder: (yargs: Argv) =>
-    yargs
-      .option("dir", {
-        type: "string",
-        describe: "directory to run in",
-      })
-      .option("all", {
-        type: "boolean",
-        describe: "stage tracked changes when nothing is staged",
-      })
-      .option("include-untracked", {
-        type: "boolean",
-        describe: "stage all changes, including untracked files, when nothing is staged",
-      })
-      .option("message", {
-        type: "string",
-        describe: "commit with this message instead of generating one",
-      })
-      .option("previous", {
-        type: "string",
-        describe: "previous generated message to avoid when regenerating",
-      })
-      .option("yes", {
-        type: "boolean",
-        describe: "commit without confirmation",
-      })
-      .option("push", {
-        type: "boolean",
-        describe: "push the branch after committing",
-      })
-      .option("dry-run", {
-        type: "boolean",
-        describe: "show message without creating a commit",
-      }),
-  handler: Effect.fn("Cli.commit")(function* (args) {
+  builder: fastCommitBuilder,
+  handler: Effect.fn("Cli.fastCommit")(function* (args) {
     const cfg = yield* Config.Service.use((svc) => svc.get())
     const instance = yield* InstanceRef
     const root = invocationDirectory(args.dir)
     const style = yield* Effect.promise(() => resolveCliStyle({ directory: root }))
     yield* Effect.promise(() =>
-      handle({
+      handleFastCommit({
         dir: args.dir,
-        all: args.all,
-        includeUntracked: args["include-untracked"],
-        message: args.message,
-        previous: args.previous,
-        yes: args.yes,
-        push: args.push,
+        confirm: args.confirm,
         dryRun: args["dry-run"],
-        prompt: cfg.commit_message?.prompt || undefined,
+        stagedOnly: args["staged-only"],
+        previous: args.previous,
+        prompt: cfg.commit_message?.prompt || FAST_COMMIT_SYSTEM_PROMPT,
         model: cfg.commit_message?.model,
+        lockTemplate: cfg.commit_message?.lock_template,
+        instance,
+        style,
+      }),
+    )
+  }),
+})
+
+export const FastCommitAndPushCommand = effectCmd<CliArgs, void>({
+  command: "fast-commit-and-push",
+  describe: "fast-commit then push when commits were created",
+  directory: (args) => invocationDirectory(args.dir),
+  builder: fastCommitBuilder,
+  handler: Effect.fn("Cli.fastCommitAndPush")(function* (args) {
+    const cfg = yield* Config.Service.use((svc) => svc.get())
+    const instance = yield* InstanceRef
+    const root = invocationDirectory(args.dir)
+    const style = yield* Effect.promise(() => resolveCliStyle({ directory: root }))
+    yield* Effect.promise(() =>
+      handleFastCommit({
+        dir: args.dir,
+        push: true,
+        confirm: args.confirm,
+        dryRun: args["dry-run"],
+        stagedOnly: args["staged-only"],
+        previous: args.previous,
+        prompt: cfg.commit_message?.prompt || FAST_COMMIT_SYSTEM_PROMPT,
+        model: cfg.commit_message?.model,
+        lockTemplate: cfg.commit_message?.lock_template,
         instance,
         style,
       }),

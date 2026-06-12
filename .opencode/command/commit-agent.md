@@ -1,5 +1,5 @@
 ---
-description: git commit and push
+description: agent-guided git commit and push
 model: opencode/kimi-k2.5
 subtask: true
 ---

@@ -27,7 +27,7 @@ import { PrCommand } from "./cli/cmd/pr"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import { TelemetryCommand } from "./cli/cmd/telemetry"
-import { CommitCommand } from "./cli/cmd/commit"
+import { FastCommitAndPushCommand, FastCommitCommand } from "./cli/cmd/fast-commit"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
@@ -117,7 +117,8 @@ const cli = yargs(args)
   .command(GithubCommand)
   .command(PrCommand)
   .command(SessionCommand)
-  .command(CommitCommand)
+  .command(FastCommitCommand)
+  .command(FastCommitAndPushCommand)
   .command(PluginCommand)
   .command(DbCommand)
   .command(TelemetryCommand)
