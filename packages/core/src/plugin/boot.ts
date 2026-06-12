@@ -21,6 +21,7 @@ import { PluginV2 } from "../plugin"
 import { AgentPlugin } from "./agent"
 import { CommandPlugin } from "./command"
 import { SkillPlugin } from "./skill"
+import { ConfigProviderAllowlistPlugin } from "../config/plugin/provider-allowlist"
 import { ConfigProviderPlugin } from "../config/plugin/provider"
 import { EnvPlugin } from "./env"
 import { ModelsDevPlugin } from "./models-dev"
@@ -112,6 +113,7 @@ export const layer = Layer.effect(
       yield* add(ConfigCommandPlugin.Plugin)
       yield* add(ConfigSkillPlugin.Plugin)
       yield* add(ConfigReferencePlugin.Plugin)
+      yield* add(ConfigProviderAllowlistPlugin.Plugin)
     }).pipe(Effect.withSpan("PluginBoot.boot"))
 
     yield* boot.pipe(

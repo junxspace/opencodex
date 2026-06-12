@@ -144,6 +144,17 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("migrates provider allowlists from v1 configuration", () =>
+    Effect.sync(() => {
+      const migrated = ConfigMigrateV1.migrate({
+        enabled_providers: ["anthropic"],
+        disabled_providers: ["DeepSeek"],
+      } as typeof ConfigV1.Info.Type)
+      expect(migrated.enabled_providers).toEqual(["anthropic"])
+      expect(migrated.disabled_providers).toEqual(["DeepSeek"])
+    }),
+  )
+
   it.live("returns an empty configuration when directory files do not exist", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

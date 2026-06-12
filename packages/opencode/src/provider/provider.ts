@@ -10,6 +10,7 @@ import { Hash } from "@opencode-ai/core/util/hash"
 import { Plugin } from "../plugin"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
+import { isProviderAllowed as matchesProviderAllowlist } from "@opencode-ai/core/config/provider-allowlist"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Auth } from "../auth"
 import { Env } from "../env"
@@ -1325,13 +1326,11 @@ export const layer = Layer.effect(
 
         // now read config providers - includes any modifications from plugin config() hook
         const configProviders = Object.entries(cfg.provider ?? {})
-        const disabled = new Set(cfg.disabled_providers ?? [])
-        const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : null
+        const disabled = cfg.disabled_providers
+        const enabled = cfg.enabled_providers
 
-        function isProviderAllowed(providerID: ProviderV2.ID): boolean {
-          if (enabled && !enabled.has(providerID)) return false
-          if (disabled.has(providerID)) return false
-          return true
+        function allowed(providerID: ProviderV2.ID): boolean {
+          return matchesProviderAllowlist(providerID, { enabled, disabled })
         }
 
         for (const hook of plugins) {
@@ -1340,7 +1339,7 @@ export const layer = Layer.effect(
           if (!p || !models) continue
 
           const providerID = ProviderV2.ID.make(p.id)
-          if (disabled.has(providerID)) continue
+          if (!allowed(providerID)) continue
 
           const provider = database[providerID]
           if (!provider) continue
@@ -1459,7 +1458,7 @@ export const layer = Layer.effect(
         const envs = yield* env.all()
         for (const [id, provider] of Object.entries(database)) {
           const providerID = ProviderV2.ID.make(id)
-          if (disabled.has(providerID)) continue
+          if (!allowed(providerID)) continue
           const apiKey = provider.env.map((item) => envs[item]).find(Boolean)
           if (!apiKey) continue
           mergeProvider(providerID, {
@@ -1472,7 +1471,7 @@ export const layer = Layer.effect(
         const auths = yield* auth.all().pipe(Effect.orDie)
         for (const [id, provider] of Object.entries(auths)) {
           const providerID = ProviderV2.ID.make(id)
-          if (disabled.has(providerID)) continue
+          if (!allowed(providerID)) continue
           if (provider.type === "api") {
             mergeProvider(providerID, {
               source: "api",
@@ -1485,7 +1484,7 @@ export const layer = Layer.effect(
         for (const plugin of plugins) {
           if (!plugin.auth) continue
           const providerID = ProviderV2.ID.make(plugin.auth.provider)
-          if (disabled.has(providerID)) continue
+          if (!allowed(providerID)) continue
 
           const stored = yield* auth.get(providerID).pipe(Effect.orDie)
           if (!stored) continue
@@ -1504,7 +1503,7 @@ export const layer = Layer.effect(
 
         for (const [id, fn] of Object.entries(custom(dep))) {
           const providerID = ProviderV2.ID.make(id)
-          if (disabled.has(providerID)) continue
+          if (!allowed(providerID)) continue
           const data = database[providerID]
           if (!data) {
             continue
@@ -1531,7 +1530,7 @@ export const layer = Layer.effect(
         }
 
         const gitlab = ProviderV2.ID.make("gitlab")
-        if (discoveryLoaders[gitlab] && providers[gitlab] && isProviderAllowed(gitlab)) {
+        if (discoveryLoaders[gitlab] && providers[gitlab] && allowed(gitlab)) {
           yield* Effect.promise(async () => {
             try {
               const discovered = await discoveryLoaders[gitlab]()
@@ -1546,7 +1545,7 @@ export const layer = Layer.effect(
 
         for (const [id, provider] of Object.entries(providers)) {
           const providerID = ProviderV2.ID.make(id)
-          if (!isProviderAllowed(providerID)) {
+          if (!allowed(providerID)) {
             delete providers[providerID]
             continue
           }
