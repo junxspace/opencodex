@@ -257,15 +257,38 @@ export function useCommandShortcut(command: string): Accessor<string> {
   )
 }
 
-export function useCommandSlashes(): Accessor<readonly CommandSlashEntry[]> {
+function usePaletteSlashEntries() {
   const keymap = useOpencodeKeymap()
-  const entries = useKeymapSelector((keymap: OpenTuiKeymap) =>
+  return useKeymapSelector((keymap: OpenTuiKeymap) =>
     keymap.getCommandEntries({
       visibility: "reachable",
       namespace: "palette",
       filter: isVisiblePaletteCommand,
     }),
   )
+}
+
+export function useSlashCommandLookup(): Accessor<ReadonlyMap<string, string>> {
+  const entries = usePaletteSlashEntries()
+  return createMemo(() => {
+    const lookup = new Map<string, string>()
+    for (const entry of entries()) {
+      const slashName = entry.command.slashName
+      if (typeof slashName !== "string" || !slashName) continue
+      lookup.set(slashName, entry.command.name)
+      const slashAliases = entry.command.slashAliases
+      if (!Array.isArray(slashAliases)) continue
+      for (const alias of slashAliases) {
+        if (typeof alias === "string" && alias) lookup.set(alias, entry.command.name)
+      }
+    }
+    return lookup
+  })
+}
+
+export function useCommandSlashes(): Accessor<readonly CommandSlashEntry[]> {
+  const keymap = useOpencodeKeymap()
+  const entries = usePaletteSlashEntries()
 
   return createMemo<CommandSlashEntry[]>(() =>
     entries().flatMap((entry) => {
