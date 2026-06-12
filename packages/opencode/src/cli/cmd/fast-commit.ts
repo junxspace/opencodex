@@ -182,7 +182,12 @@ function nonLockFiles(files: string[]) {
   return files.filter((file) => !isLockFile(file))
 }
 
-export async function handleFastCommit(args: Args) {
+export type FastCommitResult = {
+  commitCount: number
+  pushed: boolean
+}
+
+export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const root = invocationDirectory(args.dir)
   const run = args.git ?? git
   const out = args.output ?? ((text: string) => UI.println(text))
@@ -198,7 +203,7 @@ export async function handleFastCommit(args: Args) {
   const committable = selectedFiles(status, args.stagedOnly)
   if (empty(status) || committable.length === 0) {
     out(ui.info("没有可提交的变更"))
-    return
+    return { commitCount: 0, pushed: false }
   }
 
   const unstaged = run(["diff"], root)
@@ -216,7 +221,7 @@ export async function handleFastCommit(args: Args) {
   const intents = analysis.intents.filter((intent) => intent.files.length > 0)
   if (intents.length === 0) {
     out(ui.info("没有可提交的变更"))
-    return
+    return { commitCount: 0, pushed: false }
   }
 
   if (!args.dryRun) {
@@ -275,13 +280,13 @@ export async function handleFastCommit(args: Args) {
         : "commit"
       if (action === "cancel") {
         out(ui.info("Cancelled"))
-        return
+        return { commitCount, pushed: false }
       }
       if (action === "edit") {
         const next = await (args.edit ?? edit)(msg)
         if (!next) {
           out(ui.info("Cancelled"))
-          return
+          return { commitCount, pushed: false }
         }
         msg = next
         continue
@@ -332,6 +337,7 @@ export async function handleFastCommit(args: Args) {
 
   const pushed = args.push && committed ? runPush(run, root, out, error, exit, ui) : false
   if (commitCount > 0) out(ui.summary(commitCount, pushed === true))
+  return { commitCount, pushed: pushed === true }
 }
 
 function fastCommitBuilder(yargs: Argv) {

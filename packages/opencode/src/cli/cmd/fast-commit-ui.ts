@@ -135,7 +135,15 @@ export function commitUi(style: CliStyle) {
         separator(style),
         styled(`${style.TEXT_SUCCESS_BOLD}✓ Created ${count} commit${count === 1 ? "" : "s"}${style.TEXT_NORMAL}`),
       ]
-      if (pushed) lines.push(styled(`${style.TEXT_SUCCESS_BOLD}  🚀 Pushed to remote${style.TEXT_NORMAL}`))
+      if (pushed) {
+        lines.push(styled(`${style.TEXT_SUCCESS_BOLD}  🚀 Pushed to remote${style.TEXT_NORMAL}`))
+      } else if (count > 0) {
+        lines.push(
+          styled(
+            `${style.TEXT_DIM}  💡 运行 ${style.TEXT_INFO_BOLD}git push${style.TEXT_DIM} 或 ${style.TEXT_INFO_BOLD}ox fast-commit-and-push${style.TEXT_DIM} 推送到远程${style.TEXT_NORMAL}`,
+          ),
+        )
+      }
       lines.push(separator(style))
       return lines.join("\n")
     },

@@ -19,6 +19,15 @@ describe("fast-commit ui", () => {
     expect(text).toContain("─".repeat(44))
   })
 
+  test("summary suggests push when commits were not pushed", () => {
+    const ui = commitUi(Style)
+    const text = ui.summary(2, false)
+
+    expect(text).toContain("Created 2 commits")
+    expect(text).toContain("git push")
+    expect(text).toContain("fast-commit-and-push")
+  })
+
   test("gitCommitOutput highlights commit subject", () => {
     const ui = commitUi(Style)
     const text = ui.gitCommitOutput("[dev abc1234] feat(tui): 修复滚动\n 2 files changed, 10 insertions(+)")

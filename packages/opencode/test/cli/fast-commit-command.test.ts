@@ -112,6 +112,39 @@ describe("fast-commit", () => {
     expect(commits).toEqual(["feat: 添加 api", "docs: 更新 readme"])
   })
 
+  test("suggests push after commits without push flag", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "file.txt"), "hello\n")
+        await $`git add file.txt`.cwd(dir).quiet()
+        await $`git commit -m "init"`.cwd(dir).quiet()
+      },
+    })
+    await Bun.write(path.join(tmp.path, "file.txt"), "hello\nworld\n")
+    const messages: string[] = []
+
+    const result = await handleFastCommit({
+      dir: tmp.path,
+      generate: async () => ({ message: "fix: 更新文件" }),
+      analyze: async () => ({ intents: [{ files: ["file.txt"], description: "fix file" }] }),
+      git: (args) => {
+        if (args.join(" ") === "status --porcelain") return { code: 0, stdout: " M file.txt\n", stderr: "" }
+        if (args.join(" ") === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" }
+        return { code: 0, stdout: "", stderr: "" }
+      },
+      output: (text) => messages.push(text),
+      error: () => {},
+      exit: () => {},
+      style,
+    })
+
+    expect(result.commitCount).toBe(1)
+    expect(result.pushed).toBe(false)
+    expect(messages.some((line) => line.includes("git push"))).toBe(true)
+    expect(messages.some((line) => line.includes("fast-commit-and-push"))).toBe(true)
+  })
+
   test("fast-commit-and-push pushes after commits", async () => {
     await using tmp = await tmpdir({
       git: true,

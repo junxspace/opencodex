@@ -2,6 +2,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { createSignal, type JSX } from "solid-js"
 import { handleFastCommit } from "@/cli/cmd/fast-commit"
+import { resolveCliStyle } from "@/cli/theme"
 import type { CommitIntent } from "@/commit-message/analyze-intents"
 import { Config } from "@/config/config"
 import { FAST_COMMIT_SYSTEM_PROMPT } from "@/commit-message/prompt"
@@ -24,6 +25,31 @@ const id = "internal:opencode-fast-commit"
 function message(err: unknown) {
   if (err instanceof Error) return err.message
   return String(err)
+}
+
+function alert(api: TuiPluginApi, title: string, message: string) {
+  return new Promise<void>((resolve) => {
+    let done = false
+    api.ui.dialog.setSize("large")
+    api.ui.dialog.replace(
+      () =>
+        api.ui.DialogAlert({
+          title,
+          message,
+          onConfirm() {
+            done = true
+            api.ui.dialog.clear()
+            resolve()
+          },
+        }),
+      () => {
+        if (done) return
+        done = true
+        api.ui.dialog.clear()
+        resolve()
+      },
+    )
+  })
 }
 
 function prompt(
@@ -93,26 +119,36 @@ function select(api: TuiPluginApi, msg: string, intent: CommitIntent, index: num
 
 async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
   const dir = api.state.path.directory || process.cwd()
+  const title = push ? "Fast commit & push" : "Fast commit"
+  const lines: string[] = []
+  let failed = false
   const output = (text: string) => {
     if (!text.trim()) return
-    api.ui.toast({ variant: "info", message: text, duration: 3000 })
+    lines.push(text)
   }
+
+  api.ui.toast({ variant: "info", message: `正在执行 ${title}...`, duration: 120_000 })
 
   await AppRuntime.runPromise(
     Effect.gen(function* () {
       const store = yield* InstanceStore.Service
       const ctx = yield* store.load({ directory: dir })
       const cfg = yield* Config.Service.use((svc) => svc.get()).pipe(Effect.provideService(InstanceRef, ctx))
+      const style = yield* Effect.promise(() => resolveCliStyle({ directory: dir, force: false }))
       yield* Effect.promise(() =>
         handleFastCommit({
           dir,
           push,
           confirm,
+          style,
           output,
-          error: (text) => api.ui.toast({ variant: "error", message: text }),
+          error: (text) => {
+            failed = true
+            lines.push(text)
+          },
           exit: () => {},
           onProgress: (current, total) => {
-            api.ui.toast({ variant: "info", message: `正在提交 ${current}/${total}`, duration: 2000 })
+            api.ui.toast({ variant: "info", message: `正在提交 ${current}/${total}`, duration: 120_000 })
           },
           selectAction: (msg, intent, index, total) => select(api, msg, intent, index, total),
           edit: (msg) =>
@@ -128,6 +164,10 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
       yield* store.dispose(ctx)
     }),
   )
+
+  if (lines.length > 0) {
+    await alert(api, failed ? `${title} failed` : title, lines.join("\n"))
+  }
 }
 
 function register(api: TuiPluginApi, name: string, title: string, slashName: string, push: boolean) {
@@ -150,7 +190,7 @@ function register(api: TuiPluginApi, name: string, title: string, slashName: str
               api.ui.dialog.clear()
             })
             .catch((err) => {
-              api.ui.toast({ variant: "error", message: message(err) })
+              void alert(api, "Fast commit failed", message(err))
             })
             .finally(() => {
               setBusy(false)
