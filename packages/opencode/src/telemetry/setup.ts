@@ -4,7 +4,7 @@ import { runID } from "@opencode-ai/core/observability/shared"
 import { Database as BunSqlite } from "bun:sqlite"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 
-let client: BunSqlite.Database | undefined
+let client: BunSqlite | undefined
 let db: ReturnType<typeof drizzle> | undefined
 let ready = false
 
