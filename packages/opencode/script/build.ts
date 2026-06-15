@@ -15,6 +15,7 @@ process.chdir(dir)
 const generated = await import("./generate.ts")
 
 import { Script } from "@opencode-ai/script"
+import { devVersion } from "@opencode-ai/core/installation/source-version"
 import pkg from "../package.json"
 
 const singleFlag = process.argv.includes("--single")
@@ -23,6 +24,21 @@ const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+
+function localDevVersion() {
+  const sha = (() => {
+    const result = Bun.spawnSync(["git", "rev-parse", "--short=7", "HEAD"], {
+      cwd: path.resolve(dir, "../.."),
+      stdout: "pipe",
+    })
+    if (result.exitCode !== 0) return ""
+    return result.stdout.toString().trim()
+  })()
+  return devVersion({ version: pkg.version, sha })
+}
+
+// Local single-platform installs use dev-style versions (e.g. dev-1.17.3+abc1234).
+const buildVersion = singleFlag && Script.preview ? localDevVersion() : Script.version
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -138,9 +154,12 @@ await $`rm -rf dist`
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
-  await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
-  await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
-  await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
+  const install = singleFlag
+    ? (pkg: string, version: string) => $`bun install ${pkg}@${version}`
+    : (pkg: string, version: string) => $`bun install --os="*" --cpu="*" ${pkg}@${version}`
+  await install("@opentui/core", pkg.dependencies["@opentui/core"])
+  await install("@parcel/watcher", pkg.dependencies["@parcel/watcher"])
+  await install("@ff-labs/fff-bun", pkg.dependencies["@ff-labs/fff-bun"])
 }
 for (const item of targets) {
   const name = [
@@ -181,14 +200,14 @@ for (const item of targets) {
       autoloadPackageJson: true,
       target: name.replace(pkg.name, "bun") as any,
       outfile: `dist/${name}/bin/opencode`,
-      execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
+      execArgv: [`--user-agent=opencode/${buildVersion}`, "--use-system-ca", "--"],
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
     entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
-      OPENCODE_VERSION: `'${Script.version}'`,
+      OPENCODE_VERSION: `'${buildVersion}'`,
       OPENCODE_MODELS_DEV: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
       OPENCODE_WORKER_PATH: workerPath,
@@ -216,7 +235,7 @@ for (const item of targets) {
     JSON.stringify(
       {
         name,
-        version: Script.version,
+        version: buildVersion,
         preferUnplugged: true,
         os: [item.os],
         cpu: [item.arch],
@@ -226,7 +245,7 @@ for (const item of targets) {
       2,
     ),
   )
-  binaries[name] = Script.version
+  binaries[name] = buildVersion
 }
 
 if (Script.release) {

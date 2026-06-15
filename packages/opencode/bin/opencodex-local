@@ -1,0 +1,3 @@
+#!/bin/bash
+export OPENCODE_ORIG_CWD="$(pwd)"
+exec "/Users/junx/Workspace/opensource/opencodex/packages/opencode/dist/opencode-darwin-arm64/bin/opencode" "$@"
