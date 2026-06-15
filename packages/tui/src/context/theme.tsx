@@ -273,9 +273,10 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     })
 
     const values = createMemo(() => {
+      const saved = kv.get("theme")
       const selected =
         store.themes[store.active] ??
-        (typeof kv.get("theme") === "string" ? store.themes[kv.get("theme") as string] : undefined) ??
+        (typeof saved === "string" ? store.themes[saved] : undefined) ??
         store.themes.opencode ??
         DEFAULT_THEMES.opencode
       try {

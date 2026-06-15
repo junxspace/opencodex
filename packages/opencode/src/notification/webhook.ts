@@ -54,6 +54,12 @@ function sessionWasAborted(sessionID: string) {
   }
 }
 
+function cachedSessionWasAborted(sessionID: string, state: SessionNotifyState) {
+  if (state.wasAborted !== undefined) return state.wasAborted
+  state.wasAborted = sessionWasAborted(sessionID)
+  return state.wasAborted
+}
+
 function userMessage(sessionID: string) {
   try {
     const db = new BunSqlite(dbFile(), { readonly: true })
@@ -96,6 +102,7 @@ type SessionNotifyState = {
   wasBusy: boolean
   hadError: boolean
   hadInterrupt: boolean
+  wasAborted?: boolean
 }
 
 const DEFAULT_EVENTS = new Set<NotificationEvent>([
@@ -149,7 +156,7 @@ export function resolveDispatchStatus(sessionID: string, status: string) {
   if (status !== "completed") return status
   const state = sessionStates.get(sessionID)
   if (state?.hadInterrupt) return "interrupted"
-  if (sessionWasAborted(sessionID)) return "interrupted"
+  if (state && cachedSessionWasAborted(sessionID, state)) return "interrupted"
   return status
 }
 
@@ -180,8 +187,7 @@ export function notificationEvent(
     }
     if (status.type !== "idle" || !state.wasBusy) return null
     state.wasBusy = false
-    const sessionID = typeof props.sessionID === "string" ? props.sessionID : ""
-    if (state.hadInterrupt || (sessionID && sessionWasAborted(sessionID))) {
+    if (state.hadInterrupt) {
       state.hadInterrupt = false
       return { event: "task_interrupted", status: "interrupted" }
     }
@@ -196,6 +202,7 @@ export function notificationEvent(
   if (type === Session.Event.Error.type) {
     if (state && isAbortError(props.error)) {
       state.hadInterrupt = true
+      state.wasAborted = true
       return null
     }
     if (state) state.hadError = true
