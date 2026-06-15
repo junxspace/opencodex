@@ -4,8 +4,10 @@ import { Question } from "../../src/question"
 import { Session } from "../../src/session/session"
 import { SessionStatus } from "../../src/session/status"
 import {
+  formatTime,
   isAbortError,
   notificationEvent,
+  resolveDispatchStatus,
   resolveTerminalStatus,
   shouldNotify,
   shouldSkipTerminalSession,
@@ -19,10 +21,20 @@ const cfg = (input: Partial<NotificationConfig> = {}): NotificationConfig => ({
   ...input,
 })
 
+describe("notification time", () => {
+  test("formatTime uses local date parts", () => {
+    expect(formatTime(new Date(2026, 5, 15, 14, 30, 45))).toBe("2026-06-15 14:30:45")
+  })
+})
+
 describe("notification terminal status", () => {
   test("drops user interrupt terminal pairs", () => {
     expect(resolveTerminalStatus("session_error", "completed")).toBeNull()
     expect(resolveTerminalStatus("completed", "session_error")).toBeNull()
+  })
+
+  test("upgrades completed to interrupted when abort arrives late", () => {
+    expect(resolveTerminalStatus("completed", "interrupted")).toBe("interrupted")
   })
 
   test("keeps real terminal statuses", () => {
@@ -133,5 +145,17 @@ describe("notification events", () => {
 
     expect(shouldNotify(item, "task_completed")).toBe(false)
     expect(shouldNotify(item, "task_error")).toBe(true)
+  })
+
+  test("disabled task_interrupted suppresses interrupt notifications", () => {
+    const item = cfg({ disabledEvents: ["task_interrupted"] })
+
+    expect(shouldNotify(item, "task_interrupted")).toBe(false)
+    expect(shouldNotify(item, "task_completed")).toBe(true)
+  })
+
+  test("resolveDispatchStatus leaves completed when no abort signal", () => {
+    expect(resolveDispatchStatus("ses_missing", "completed")).toBe("completed")
+    expect(resolveDispatchStatus("ses_missing", "interrupted")).toBe("interrupted")
   })
 })

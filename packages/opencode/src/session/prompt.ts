@@ -1289,12 +1289,14 @@ export const layer = Layer.effect(
 
           const finalizeInterruptedAssistant = Effect.gen(function* () {
             if (msg.time.completed) return
+            const hadError = msg.error
             msg.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
               providerID: msg.providerID,
               aborted: true,
             })
             msg.time.completed = Date.now()
             yield* sessions.updateMessage(msg)
+            if (!hadError) yield* events.publish(Session.Event.Error, { sessionID, error: msg.error })
           })
 
           const handle = yield* processor

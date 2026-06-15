@@ -38,6 +38,22 @@ function sessionTitle(sessionID: string) {
   return ""
 }
 
+function sessionWasAborted(sessionID: string) {
+  try {
+    const db = new BunSqlite(dbFile(), { readonly: true })
+    const row = db
+      .query(
+        `SELECT json_extract(m.data, '$.error.name') as errorName FROM message m WHERE m.session_id = $id AND json_extract(m.data, '$.role') = 'assistant' ORDER BY m.time_created DESC LIMIT 1`,
+      )
+      .get({ $id: sessionID }) as { errorName: string | null } | null
+    db.close()
+    return row?.errorName === "MessageAbortedError"
+  } catch (err) {
+    log.debug("failed to read session abort state", { err, sessionID })
+    return false
+  }
+}
+
 function userMessage(sessionID: string) {
   try {
     const db = new BunSqlite(dbFile(), { readonly: true })
@@ -125,7 +141,16 @@ export function resolveTerminalStatus(current: string | undefined, next: string)
   if (current === "interrupted") return null
   if (current === "session_error" && next === "completed") return null
   if (current === "completed" && next === "session_error") return null
+  if (current === "completed" && next === "interrupted") return "interrupted"
   return next
+}
+
+export function resolveDispatchStatus(sessionID: string, status: string) {
+  if (status !== "completed") return status
+  const state = sessionStates.get(sessionID)
+  if (state?.hadInterrupt) return "interrupted"
+  if (sessionWasAborted(sessionID)) return "interrupted"
+  return status
 }
 
 function sessionState(sessionID: string) {
@@ -155,7 +180,8 @@ export function notificationEvent(
     }
     if (status.type !== "idle" || !state.wasBusy) return null
     state.wasBusy = false
-    if (state.hadInterrupt) {
+    const sessionID = typeof props.sessionID === "string" ? props.sessionID : ""
+    if (state.hadInterrupt || (sessionID && sessionWasAborted(sessionID))) {
       state.hadInterrupt = false
       return { event: "task_interrupted", status: "interrupted" }
     }
@@ -237,8 +263,15 @@ function projectName(directory: string) {
   return path.basename(directory)
 }
 
-function formatTime() {
-  return new Date().toISOString().replace("T", " ").slice(0, 19)
+export function formatTime(date = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+function upgradePendingInterrupt(sessionID: string) {
+  const item = pending.get(sessionID)
+  if (item?.status !== "completed") return
+  item.status = "interrupted"
 }
 
 function send(cfg: NotificationConfig, sessionID: string, event: NotificationEvent, status: string, directory: string) {
@@ -285,9 +318,10 @@ function dispatch(cfg: NotificationConfig, sessionID: string, event: Notificatio
 
   const timer = setTimeout(() => {
     pending.delete(sessionID)
-    const evt = statusEvent(next)
+    const status = resolveDispatchStatus(sessionID, next)
+    const evt = statusEvent(status)
     if (!evt) return
-    send(cfg, sessionID, evt, next, directory)
+    send(cfg, sessionID, evt, status, directory)
   }, TERMINAL_DELAY_MS)
   pending.set(sessionID, { timer, status: next, directory })
 }
@@ -327,7 +361,10 @@ async function handle(evt: GlobalEvent) {
 
   const state = sessionState(sessionID)
   const item = notificationEvent(type, props, state)
-  if (!item) return
+  if (!item) {
+    if (type === Session.Event.Error.type && isAbortError(props.error)) upgradePendingInterrupt(sessionID)
+    return
+  }
 
   log.debug("notification event received", { type, event: item.event, sessionID, status: item.status, directory })
   const session = (() => {
