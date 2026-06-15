@@ -18,7 +18,7 @@ describe("util/log", () => {
     const writes: string[] = []
     process.stderr.write = ((chunk: string | Uint8Array) => {
       writes.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk))
-      return chunk.length
+      return true
     }) as typeof process.stderr.write
 
     await Log.init({ print: false, dev: true, level: "INFO" })
