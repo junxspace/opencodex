@@ -241,6 +241,9 @@ export function upsertTheme(name: string, theme: unknown) {
 export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   const defs = theme.defs ?? {}
   function resolveColor(c: ColorValue, chain: string[] = []): RGBA {
+    if (c === undefined || c === null) {
+      throw new Error(`Color value is undefined${chain.length ? ` in chain: ${chain.join(" -> ")}` : ""}`)
+    }
     if (c instanceof RGBA) return c
     if (typeof c === "string") {
       if (c === "transparent" || c === "none") return RGBA.fromInts(0, 0, 0, 0)
@@ -260,7 +263,11 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
     if (typeof c === "number") {
       return ansiToRgba(c)
     }
-    return resolveColor(c[mode], chain)
+    const modeColor = c[mode]
+    if (modeColor === undefined) {
+      throw new Error(`Color mode "${mode}" is undefined${chain.length ? ` in chain: ${chain.join(" -> ")}` : ""}`)
+    }
+    return resolveColor(modeColor, chain)
   }
 
   const resolved = Object.fromEntries(

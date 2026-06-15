@@ -30,7 +30,7 @@ export function useThinkingMode() {
   const kv = useKV()
   // Capture pre-state before `kv.signal` seeds a default, so we can detect
   // first-time users with a legacy `thinking_visibility` boolean and migrate.
-  // The KVProvider only renders children once kv.ready, so reads here are safe.
+  // KV state is read synchronously on startup, so persisted values are available immediately.
   const hadStored = kv.get("thinking_mode") !== undefined
   const legacy = kv.get("thinking_visibility")
   const [stored, setStored] = kv.signal<ThinkingMode>("thinking_mode", "hide")
