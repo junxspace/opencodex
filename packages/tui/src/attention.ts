@@ -14,6 +14,7 @@ import { AttentionSoundName, type TuiConfig } from "./config"
 import { Schema } from "effect"
 import stripAnsi from "strip-ansi"
 import * as TuiAudio from "./audio"
+import fs from "node:fs"
 import defaultSoundPath from "@opencode-ai/ui/audio/bip-bop-01.mp3" with { type: "file" }
 import questionSoundPath from "@opencode-ai/ui/audio/bip-bop-03.mp3" with { type: "file" }
 import permissionSoundPath from "@opencode-ai/ui/audio/staplebops-06.mp3" with { type: "file" }
@@ -179,13 +180,25 @@ export function createTuiAttention(input: {
         const notificationSkip = focusSkip(requestedNotification?.when ?? "blurred", focus)
         const notificationRequested = input.config.attention.notifications && request.notification !== false
         const shouldNotify = notificationRequested && !notificationSkip
+        if (input.config.attention.notifications && request.notification !== false) {
+          try {
+            ;(input.renderer as unknown as { writeOut?: (chunk: string) => void }).writeOut?.("\x07")
+          } catch {
+            try {
+              fs.writeSync(process.stdout.fd ?? 1, "\x07")
+            } catch {
+              process.stdout.write("\x07")
+            }
+          }
+        }
         const notification = shouldNotify
           ? (() => {
               try {
-                return input.renderer.triggerNotification(
+                input.renderer.triggerNotification(
                   message,
                   normalizeText(request.title, DEFAULT_TITLE, TITLE_LIMIT),
                 )
+                return true
               } catch (error) {
                 console.debug("failed to trigger attention notification", { error })
                 return false

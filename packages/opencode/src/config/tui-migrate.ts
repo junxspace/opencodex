@@ -12,9 +12,7 @@ const TUI_SCHEMA_URL = "https://opencode.ai/tui.json"
 
 const decodeTheme = Schema.decodeUnknownOption(Schema.String)
 const decodeRecord = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
-const decodeScrollSpeed = Schema.decodeUnknownOption(TuiConfig.ScrollSpeed)
-const decodeScrollAcceleration = Schema.decodeUnknownOption(TuiConfig.ScrollAcceleration)
-const decodeDiffStyle = Schema.decodeUnknownOption(TuiConfig.DiffStyle)
+const decodeTuiSection = Schema.decodeUnknownOption(TuiConfig.Info)
 
 interface MigrateInput {
   cwd: string
@@ -37,14 +35,13 @@ export async function migrateTuiConfig(input: MigrateInput) {
 
     const theme = decodeTheme("theme" in data ? data.theme : undefined)
     const keybinds = decodeRecord("keybinds" in data ? data.keybinds : undefined)
-    const legacyTui = decodeRecord("tui" in data ? data.tui : undefined)
+    const legacyTui = decodeTuiSection("tui" in data ? data.tui : undefined)
     const extracted = {
       theme: Option.getOrUndefined(theme),
       keybinds: Option.getOrUndefined(keybinds),
       tui: Option.getOrUndefined(legacyTui),
     }
-    const tui = extracted.tui ? normalizeTui(extracted.tui) : undefined
-    if (extracted.theme === undefined && extracted.keybinds === undefined && !tui) continue
+    if (extracted.theme === undefined && extracted.keybinds === undefined && !extracted.tui) continue
 
     const target = path.join(path.dirname(file), "tui.json")
     const targetExists = await Filesystem.exists(target)
@@ -55,7 +52,7 @@ export async function migrateTuiConfig(input: MigrateInput) {
     }
     if (extracted.theme !== undefined) payload.theme = extracted.theme
     if (extracted.keybinds !== undefined) payload.keybinds = extracted.keybinds
-    if (tui) Object.assign(payload, tui)
+    if (extracted.tui) Object.assign(payload, extracted.tui)
 
     const wrote = await Filesystem.write(target, JSON.stringify(payload, null, 2))
       .then(() => true)
@@ -65,25 +62,6 @@ export async function migrateTuiConfig(input: MigrateInput) {
     const stripped = await backupAndStripLegacy(file, source)
     if (!stripped) continue
   }
-}
-
-function normalizeTui(data: Record<string, unknown>):
-  | {
-      scroll_speed: number | undefined
-      scroll_acceleration: { enabled: boolean } | undefined
-      diff_style: "auto" | "stacked" | undefined
-    }
-  | undefined {
-  const parsed = {
-    scroll_speed: Option.getOrUndefined(decodeScrollSpeed(data.scroll_speed)),
-    scroll_acceleration: Option.getOrUndefined(decodeScrollAcceleration(data.scroll_acceleration)),
-    diff_style: Option.getOrUndefined(decodeDiffStyle(data.diff_style)),
-  }
-  return parsed.scroll_speed === undefined &&
-    parsed.diff_style === undefined &&
-    parsed.scroll_acceleration === undefined
-    ? undefined
-    : parsed
 }
 
 async function backupAndStripLegacy(file: string, source: string) {

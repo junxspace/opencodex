@@ -257,6 +257,36 @@ it.instance("drops unknown legacy tui keys during migration", () =>
   ),
 )
 
+it.instance("migrates attention and other nested tui keys", () =>
+  withCleanState(
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const test = yield* TestInstance
+      yield* fs.writeJson(path.join(test.directory, "opencode.json"), {
+        tui: {
+          attention: { enabled: true, notifications: true, sound: false },
+          mouse: false,
+          prompt: { max_height: 10 },
+        },
+      })
+
+      const config = yield* getTuiConfig(test.directory)
+      expect(config.attention.enabled).toBe(true)
+      expect(config.attention.notifications).toBe(true)
+      expect(config.attention.sound).toBe(false)
+      expect(config.mouse).toBe(false)
+
+      const migrated = JSON.parse(yield* fs.readFileString(path.join(test.directory, "tui.json")))
+      expect(migrated.attention).toEqual({ enabled: true, notifications: true, sound: false })
+      expect(migrated.mouse).toBe(false)
+      expect(migrated.prompt).toEqual({ max_height: 10 })
+
+      const source = JSON.parse(yield* fs.readFileString(path.join(test.directory, "opencode.json")))
+      expect(source.tui).toBeUndefined()
+    }),
+  ),
+)
+
 it.instance("skips migration when opencode.jsonc is syntactically invalid", () =>
   withCleanState(
     Effect.gen(function* () {
