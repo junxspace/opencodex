@@ -32,6 +32,8 @@ function formatFileList(style: CliStyle, files: string[]) {
   return lines.join("\n")
 }
 
+export type PushState = "skipped" | "succeeded" | "failed"
+
 export function commitUi(style: CliStyle) {
   const styled = (text: string) => text + style.TEXT_NORMAL
 
@@ -129,15 +131,24 @@ export function commitUi(style: CliStyle) {
       if (total <= 1) return styled(`${style.TEXT_SUCCESS_BOLD}  ✓ Committed${style.TEXT_NORMAL}`)
       return styled(`${style.TEXT_SUCCESS_BOLD}  ✓ Committed ${index}/${total}${style.TEXT_NORMAL}`)
     },
-    summary(count: number, pushed: boolean) {
+    summary(count: number, push: PushState) {
       const lines = [
         "",
         separator(style),
         styled(`${style.TEXT_SUCCESS_BOLD}✓ Created ${count} commit${count === 1 ? "" : "s"}${style.TEXT_NORMAL}`),
       ]
-      if (pushed) {
+      if (push === "succeeded") {
         lines.push(styled(`${style.TEXT_SUCCESS_BOLD}  🚀 Pushed to remote${style.TEXT_NORMAL}`))
-      } else if (count > 0) {
+      }
+      if (push === "failed") {
+        lines.push(styled(`${style.TEXT_DANGER_BOLD}  ✗ Push failed${style.TEXT_NORMAL}`))
+        lines.push(
+          styled(
+            `${style.TEXT_DIM}  请修复上述问题后运行 ${style.TEXT_INFO_BOLD}git push${style.TEXT_DIM} 重试${style.TEXT_NORMAL}`,
+          ),
+        )
+      }
+      if (push === "skipped" && count > 0) {
         lines.push(
           styled(
             `${style.TEXT_DIM}  💡 运行 ${style.TEXT_INFO_BOLD}git push${style.TEXT_DIM} 或 ${style.TEXT_INFO_BOLD}ox fast-commit-and-push${style.TEXT_DIM} 推送到远程${style.TEXT_NORMAL}`,

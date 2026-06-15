@@ -185,6 +185,7 @@ function nonLockFiles(files: string[]) {
 export type FastCommitResult = {
   commitCount: number
   pushed: boolean
+  pushFailed: boolean
 }
 
 export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
@@ -195,7 +196,7 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const exit = args.exit ?? ((code: number) => (process.exitCode = code))
   const ui = commitUi(args.style ?? (await resolveCliStyle({ directory: root })))
   const statusResult = run(["status", "--porcelain"], root)
-  if (!check(statusResult, error, exit)) return
+  if (!check(statusResult, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
 
   const status = parseStatus(statusResult.stdout)
   out(ui.statusOverview(status))
@@ -203,13 +204,13 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const committable = selectedFiles(status, args.stagedOnly)
   if (empty(status) || committable.length === 0) {
     out(ui.info("没有可提交的变更"))
-    return { commitCount: 0, pushed: false }
+    return { commitCount: 0, pushed: false, pushFailed: false }
   }
 
   const unstaged = run(["diff"], root)
-  if (!check(unstaged, error, exit)) return
+  if (!check(unstaged, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
   const staged = run(["diff", "--staged"], root)
-  if (!check(staged, error, exit)) return
+  if (!check(staged, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
 
   const analysis = await (args.analyze ?? analyzeIntents)({
     path: root,
@@ -221,12 +222,12 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const intents = analysis.intents.filter((intent) => intent.files.length > 0)
   if (intents.length === 0) {
     out(ui.info("没有可提交的变更"))
-    return { commitCount: 0, pushed: false }
+    return { commitCount: 0, pushed: false, pushFailed: false }
   }
 
   if (!args.dryRun) {
     const reset = run(["reset"], root)
-    if (!check(reset, error, exit)) return
+    if (!check(reset, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
   }
 
   out(ui.intentPlan(intents.length))
@@ -241,12 +242,12 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     if (invalid.length > 0) {
       error(`Intent references files that are not changed: ${invalid.join(", ")}`)
       exit(1)
-      return
+      return { commitCount, pushed: false, pushFailed: false }
     }
 
     if (!args.dryRun) {
       const result = run(["add", ...intent.files], root)
-      if (!check(result, error, exit)) return
+      if (!check(result, error, exit)) return { commitCount, pushed: false, pushFailed: false }
     }
 
     let msg = messageForIntent(intent, args.lockTemplate)
@@ -266,7 +267,7 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     if (!msg?.trim()) {
       error("Commit message is empty")
       exit(1)
-      return
+      return { commitCount, pushed: false, pushFailed: false }
     }
 
     while (true) {
@@ -280,13 +281,13 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
         : "commit"
       if (action === "cancel") {
         out(ui.info("Cancelled"))
-        return { commitCount, pushed: false }
+        return { commitCount, pushed: false, pushFailed: false }
       }
       if (action === "edit") {
         const next = await (args.edit ?? edit)(msg)
         if (!next) {
           out(ui.info("Cancelled"))
-          return { commitCount, pushed: false }
+          return { commitCount, pushed: false, pushFailed: false }
         }
         msg = next
         continue
@@ -317,15 +318,15 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
       if (diff.code === 0) {
         error("No staged changes found")
         exit(1)
-        return
+        return { commitCount, pushed: false, pushFailed: false }
       }
       if (diff.code !== 1) {
         check(diff, error, exit)
-        return
+        return { commitCount, pushed: false, pushFailed: false }
       }
 
       const result = run(["commit", "-m", msg], root)
-      if (!check(result, error, exit)) return
+      if (!check(result, error, exit)) return { commitCount, pushed: false, pushFailed: false }
       const text = result.stdout.trim()
       if (text) out(ui.gitCommitOutput(text))
       if (!text) out(ui.committed(index + 1, intents.length))
@@ -335,9 +336,12 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     }
   }
 
-  const pushed = args.push && committed ? runPush(run, root, out, error, exit, ui) : false
-  if (commitCount > 0) out(ui.summary(commitCount, pushed === true))
-  return { commitCount, pushed: pushed === true }
+  const pushFailed = args.push === true && committed
+  const pushed = pushFailed ? runPush(run, root, out, error, exit, ui) : false
+  if (commitCount > 0) {
+    out(ui.summary(commitCount, pushed ? "succeeded" : pushFailed ? "failed" : "skipped"))
+  }
+  return { commitCount, pushed, pushFailed: pushFailed && !pushed }
 }
 
 function fastCommitBuilder(yargs: Argv) {

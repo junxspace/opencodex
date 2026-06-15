@@ -21,11 +21,21 @@ describe("fast-commit ui", () => {
 
   test("summary suggests push when commits were not pushed", () => {
     const ui = commitUi(Style)
-    const text = ui.summary(2, false)
+    const text = ui.summary(2, "skipped")
 
     expect(text).toContain("Created 2 commits")
     expect(text).toContain("git push")
     expect(text).toContain("fast-commit-and-push")
+  })
+
+  test("summary reports push failure without suggesting fast-commit-and-push", () => {
+    const ui = commitUi(Style)
+    const text = ui.summary(1, "failed")
+
+    expect(text).toContain("Created 1 commit")
+    expect(text).toContain("Push failed")
+    expect(text).toContain("git push")
+    expect(text).not.toContain("fast-commit-and-push")
   })
 
   test("gitCommitOutput highlights commit subject", () => {

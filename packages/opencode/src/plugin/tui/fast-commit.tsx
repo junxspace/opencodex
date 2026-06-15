@@ -43,15 +43,33 @@ function statusOverviewLine(line: string) {
   return false
 }
 
-function dialogMessage(lines: string[], failed: boolean) {
-  const filtered = failed
-    ? lines
-    : lines.filter((line) => {
-        if (!line.trim()) return false
-        return !statusOverviewLine(line)
-      })
-  const text = filtered.map(plainText).join("\n").replace(/\n{3,}/g, "\n\n").trim()
+function dialogMessage(lines: string[], errors: string[], result: FastCommitResult) {
+  if (result.pushFailed && result.commitCount > 0) {
+    const body = errors.map(plainText).join("\n\n").trim()
+    return [
+      `已创建 ${result.commitCount} 个 commit（仅保存在本地）。`,
+      "",
+      body ? `推送失败：\n${body}` : "推送失败。",
+      "",
+      "请修复上述问题后重新运行 git push。",
+    ]
+      .join("\n")
+      .trim()
+  }
+
+  const filtered = lines.filter((line) => {
+    if (!line.trim()) return false
+    return !statusOverviewLine(line)
+  })
+  const parts = errors.length > 0 ? [...errors.map(plainText), ...filtered.map(plainText)] : filtered.map(plainText)
+  const text = parts.join("\n").replace(/\n{3,}/g, "\n\n").trim()
   return text || plainText(lines.join("\n")).trim()
+}
+
+function resultTitle(title: string, result: FastCommitResult, failed: boolean) {
+  if (result.pushFailed && result.commitCount > 0) return "提交成功，推送失败"
+  if (failed) return `${title} failed`
+  return title
 }
 
 function alert(api: TuiPluginApi, title: string, message: string) {
@@ -148,6 +166,7 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
   const dir = api.state.path.directory || process.cwd()
   const title = push ? "Fast commit & push" : "Fast commit"
   const lines: string[] = []
+  const errors: string[] = []
   let failed = false
   const output = (text: string) => {
     if (!text.trim()) return
@@ -156,7 +175,7 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
 
   api.ui.toast({ variant: "info", message: `正在执行 ${title}...`, duration: 120_000 })
 
-  let result: FastCommitResult = { commitCount: 0, pushed: false }
+  let result: FastCommitResult = { commitCount: 0, pushed: false, pushFailed: false }
 
   await AppRuntime.runPromise(
     Effect.gen(function* () {
@@ -173,7 +192,7 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
           output,
           error: (text) => {
             failed = true
-            lines.push(text)
+            errors.push(text)
           },
           exit: () => {},
           onProgress: (current, total) => {
@@ -194,8 +213,17 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
     }),
   )
 
-  if (lines.length > 0 || result.commitCount > 0) {
-    await alert(api, failed ? `${title} failed` : title, dialogMessage(lines, failed))
+  if (lines.length > 0 || errors.length > 0 || result.commitCount > 0) {
+    await alert(api, resultTitle(title, result, failed), dialogMessage(lines, errors, result))
+  }
+
+  if (result.pushFailed && result.commitCount > 0) {
+    api.ui.toast({
+      variant: "warning",
+      message: `已提交 ${result.commitCount} 个更改，但推送失败`,
+      duration: 5000,
+    })
+    return
   }
 
   if (!failed && result.commitCount > 0) {

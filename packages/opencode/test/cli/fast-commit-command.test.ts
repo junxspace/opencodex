@@ -141,6 +141,7 @@ describe("fast-commit", () => {
 
     expect(result.commitCount).toBe(1)
     expect(result.pushed).toBe(false)
+    expect(result.pushFailed).toBe(false)
     expect(messages.some((line) => line.includes("git push"))).toBe(true)
     expect(messages.some((line) => line.includes("fast-commit-and-push"))).toBe(true)
   })
@@ -177,6 +178,44 @@ describe("fast-commit", () => {
 
     expect(calls).toContain("commit -m fix: 更新文件")
     expect(calls.at(-1)).toBe("push")
+  })
+
+  test("fast-commit-and-push reports push failure after commits", async () => {
+    await using tmp = await tmpdir({
+      git: true,
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "file.txt"), "hello\n")
+        await $`git add file.txt`.cwd(dir).quiet()
+        await $`git commit -m "init"`.cwd(dir).quiet()
+      },
+    })
+    await Bun.write(path.join(tmp.path, "file.txt"), "hello\nworld\n")
+    const messages: string[] = []
+    const errors: string[] = []
+
+    const result = await handleFastCommit({
+      dir: tmp.path,
+      push: true,
+      generate: async () => ({ message: "fix: 更新文件" }),
+      analyze: async () => ({ intents: [{ files: ["file.txt"], description: "fix file" }] }),
+      git: (args) => {
+        if (args.join(" ") === "status --porcelain") return { code: 0, stdout: " M file.txt\n", stderr: "" }
+        if (args.join(" ") === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" }
+        if (args[0] === "push") return { code: 2, stdout: "", stderr: "husky - pre-push script failed\nerror: typecheck failed" }
+        return { code: 0, stdout: "", stderr: "" }
+      },
+      output: (text) => messages.push(text),
+      error: (text) => errors.push(text),
+      exit: () => {},
+      style,
+    })
+
+    expect(result.commitCount).toBe(1)
+    expect(result.pushed).toBe(false)
+    expect(result.pushFailed).toBe(true)
+    expect(errors.join("\n")).toContain("pre-push script failed")
+    expect(messages.some((line) => line.includes("Push failed"))).toBe(true)
+    expect(messages.some((line) => line.includes("fast-commit-and-push"))).toBe(false)
   })
 
   test("push is skipped when there are no commits", async () => {
