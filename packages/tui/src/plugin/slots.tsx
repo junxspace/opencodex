@@ -22,9 +22,13 @@ function isHostSlotPlugin(value: unknown): value is HostSlotPlugin<Record<string
   return isRecord(value.slots)
 }
 
+function fallbackSlot(props: TuiSlotProps<string>) {
+  return props.children ?? null
+}
+
 export function createSlots() {
   const empty: SlotView = () => null
-  const [view, setView] = createSignal<SlotView>(empty)
+  const [view, setView] = createSignal<SlotView>(fallbackSlot)
   const Slot: SlotView = (props) => view()(props)
 
   return {

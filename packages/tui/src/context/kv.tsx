@@ -6,6 +6,17 @@ import { Global } from "@opencode-ai/core/global"
 import { readJson, writeJsonAtomic } from "../util/persistence"
 import { useTuiPaths } from "./runtime"
 import path from "path"
+import { existsSync, readFileSync } from "node:fs"
+
+function readKvFile(file: string) {
+  if (!existsSync(file)) return {}
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>
+  } catch (error) {
+    console.error("Failed to read KV state", { error, file })
+    return {}
+  }
+}
 
 export const { use: useKV, provider: KVProvider } = createSimpleContext({
   name: "KV",
@@ -14,8 +25,8 @@ export const { use: useKV, provider: KVProvider } = createSimpleContext({
     void Global.Path.state
     const file = path.join(paths.state, "kv.json")
     const lock = `tui-kv:${file}`
-    const [ready, setReady] = createSignal(false)
-    const [store, setStore] = createStore<Record<string, any>>()
+    const [ready, setReady] = createSignal(true)
+    const [store, setStore] = createStore<Record<string, any>>(readKvFile(file))
     // Queue same-process writes so rapid updates persist in order.
     let write = Promise.resolve()
 
@@ -24,7 +35,7 @@ export const { use: useKV, provider: KVProvider } = createSimpleContext({
         setStore(x)
       })
       .catch((error) => {
-        console.error("Failed to read KV state", { error })
+        console.error("Failed to refresh KV state", { error })
       })
       .finally(() => {
         setReady(true)

@@ -94,10 +94,8 @@ const [store, setStore] = createStore<State>({
   mode: "dark",
   lock: undefined,
   active: "opencode",
-  ready: false,
+  ready: true,
 })
-
-subscribeThemes((themes) => setStore("themes", themes))
 
 export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
@@ -106,6 +104,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const config = useTuiConfig()
     const kv = useKV()
     const themes = props.source ?? themeSource
+    let disposed = false
+    const alive = () => !disposed && !renderer.isDestroyed
+    const unsubscribeThemes = subscribeThemes((themes) => {
+      if (!alive()) return
+      setStore("themes", themes)
+    })
     const pick = (value: unknown) => {
       if (value === "dark" || value === "light") return value
       return
@@ -120,7 +124,6 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         draft.lock = lock
         const active = config.theme ?? kv.get("theme", "opencode")
         draft.active = typeof active === "string" ? active : "opencode"
-        draft.ready = false
       }),
     )
 
@@ -133,6 +136,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       return themes
         .discover()
         .then((themes) => {
+          if (!alive()) return
           setCustomThemes(
             Object.entries(themes).reduce<Record<string, ThemeJson>>((result, [name, theme]) => {
               if (isTheme(theme)) result[name] = theme
@@ -140,7 +144,10 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
             }, {}),
           )
         })
-        .catch(() => setStore("active", "opencode"))
+        .catch(() => {
+          if (!alive()) return
+          setStore("active", "opencode")
+        })
     }
 
     onMount(() => {
@@ -153,9 +160,11 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     let systemThemeMode: "dark" | "light" | undefined
     let hasResolvedSystemTheme = false
     function resolveSystemTheme(mode: "dark" | "light" = store.mode) {
+      if (!alive()) return Promise.resolve()
       return renderer
         .getPalette({ size: 16 })
         .then((colors: TerminalColors) => {
+          if (!alive()) return
           if (!colors.palette[0]) {
             if (hasResolvedSystemTheme) return
             setSystemTheme(undefined)
@@ -172,6 +181,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
           setSystemTheme(generateSystem(colors, next))
         })
         .catch(() => {
+          if (!alive()) return
           if (hasResolvedSystemTheme) return
           setSystemTheme(undefined)
           if (store.active === "system") setStore("active", "opencode")
@@ -182,6 +192,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     let systemRefreshQueued = false
     let systemRefreshMode = store.mode
     function refreshSystemTheme(mode: "dark" | "light" = store.mode) {
+      if (!alive()) return
       systemRefreshMode = mode
       if (systemRefreshRunning) {
         systemRefreshQueued = true
@@ -193,6 +204,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       renderer.clearPaletteCache()
       void resolveSystemTheme(mode).finally(() => {
         systemRefreshRunning = false
+        if (!alive()) return
         if (!retry && !systemRefreshQueued) return
         systemRefreshQueued = false
         refreshSystemTheme(systemRefreshMode)
@@ -227,16 +239,21 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
     const handleThemeNotification = (sequence: string) => {
       if (sequence !== "\x1b[?997;1n" && sequence !== "\x1b[?997;2n") return false
-      queueMicrotask(() => refreshSystemTheme())
+      queueMicrotask(() => {
+        if (!alive()) return
+        refreshSystemTheme()
+      })
       return false
     }
     renderer.prependInputHandler(handleThemeNotification)
 
     let themeRefreshTimeouts: ReturnType<typeof setTimeout>[] = []
     const refresh = () => {
+      if (!alive()) return
       for (const timeout of themeRefreshTimeouts) clearTimeout(timeout)
       themeRefreshTimeouts = THEME_REFRESH_DELAYS.map((delay) =>
         setTimeout(() => {
+          if (!alive()) return
           refreshSystemTheme()
           if (delay === THEME_REFRESH_DELAYS[THEME_REFRESH_DELAYS.length - 1]) void syncCustomThemes()
         }, delay),
@@ -246,6 +263,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     unsubscribeRefresh = themes.subscribeRefresh?.(refresh)
 
     onCleanup(() => {
+      disposed = true
+      unsubscribeThemes()
       renderer.off(CliRenderEvents.THEME_MODE, handle)
       renderer.removeInputHandler(handleThemeNotification)
       unsubscribeRefresh?.()
@@ -254,19 +273,23 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     })
 
     const values = createMemo(() => {
-      const active = store.themes[store.active]
-      if (active) return resolveTheme(active, store.mode)
-
-      const saved = kv.get("theme")
-      if (typeof saved === "string") {
-        const theme = store.themes[saved]
-        if (theme) return resolveTheme(theme, store.mode)
+      const selected =
+        store.themes[store.active] ??
+        (typeof kv.get("theme") === "string" ? store.themes[kv.get("theme") as string] : undefined) ??
+        store.themes.opencode ??
+        DEFAULT_THEMES.opencode
+      try {
+        return resolveTheme(selected, store.mode)
+      } catch (error) {
+        console.error("Failed to resolve theme", { active: store.active, error })
+        return resolveTheme(DEFAULT_THEMES.opencode, store.mode)
       }
-
-      return resolveTheme(store.themes.opencode, store.mode)
     })
 
-    createEffect(() => renderer.setBackgroundColor(values().background))
+    createEffect(() => {
+      if (!alive()) return
+      renderer.setBackgroundColor(values().background)
+    })
 
     const syntax = createSyntaxStyleMemo(() => generateSyntax(values()))
     const subtleSyntax = createSyntaxStyleMemo(() => generateSubtleSyntax(values()))

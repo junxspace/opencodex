@@ -2,6 +2,9 @@ import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-j
 import { useTheme } from "../context/theme"
 import { Spinner } from "./spinner"
 
+const SHOW_DELAY_MS = 100
+const MIN_VISIBLE_MS = 200
+
 export function StartupLoading(props: { ready: () => boolean }) {
   const theme = useTheme().theme
   const [show, setShow] = createSignal(false)
@@ -19,7 +22,7 @@ export function StartupLoading(props: { ready: () => boolean }) {
       if (!show()) return
       if (hold) return
 
-      const left = 3000 - (Date.now() - stamp)
+      const left = MIN_VISIBLE_MS - (Date.now() - stamp)
       if (left <= 0) {
         setShow(false)
         return
@@ -43,7 +46,7 @@ export function StartupLoading(props: { ready: () => boolean }) {
       wait = undefined
       stamp = Date.now()
       setShow(true)
-    }, 500).unref()
+    }, SHOW_DELAY_MS).unref()
   })
 
   onCleanup(() => {

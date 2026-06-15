@@ -25,6 +25,7 @@ import { useProject } from "./project"
 import { useEvent } from "./event"
 import { useSDK } from "./sdk"
 import { useTuiStartup } from "./runtime"
+import { StartupTrace } from "@opencode-ai/core/util/startup-trace"
 import { createSimpleContext } from "./helper"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
@@ -426,67 +427,58 @@ export const {
     const args = useArgs()
 
     async function bootstrap(input: { fatal?: boolean } = {}) {
+      StartupTrace.mark("sync.bootstrap.start")
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
       const projectPromise = project.sync()
       const sessionListPromise = projectPromise.then(() => listSessions())
 
-      // blocking - include session.list when continuing a session
       const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
+      const agentsPromise = sdk.client.app.agents({ workspace }, { throwOnError: true })
+      const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
       const providerListPromise = sdk.client.provider.list({ workspace }, { throwOnError: true })
       const consoleStatePromise = sdk.client.experimental.console
         .get({ workspace }, { throwOnError: true })
         .then((x) => x.data)
         .catch(() => emptyConsoleState)
-      const agentsPromise = sdk.client.app.agents({ workspace }, { throwOnError: true })
-      const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
+
       await Promise.all([
         providersPromise,
-        providerListPromise,
         agentsPromise,
         configPromise,
         projectPromise,
         ...(args.continue ? [sessionListPromise] : []),
       ])
-        .then(async () => {
-          const providersResponse = providersPromise.then((x) => x.data!)
-          const providerListResponse = providerListPromise.then((x) => x.data!)
-          const consoleStateResponse = consoleStatePromise
-          const agentsResponse = agentsPromise.then((x) => x.data ?? [])
-          const configResponse = configPromise.then((x) => x.data!)
-          const sessionListResponse = args.continue ? sessionListPromise : undefined
+        .then(() =>
+          Promise.all([
+            providersPromise.then((x) => x.data!),
+            agentsPromise.then((x) => x.data ?? []),
+            configPromise.then((x) => x.data!),
+            ...(args.continue ? [sessionListPromise] : []),
+          ]),
+        )
+        .then((responses) => {
+          const providers = responses[0]
+          const agents = responses[1]
+          const config = responses[2]
+          const sessions = responses[3]
 
-          return Promise.all([
-            providersResponse,
-            providerListResponse,
-            consoleStateResponse,
-            agentsResponse,
-            configResponse,
-            ...(sessionListResponse ? [sessionListResponse] : []),
-          ]).then((responses) => {
-            const providers = responses[0]
-            const providerList = responses[1]
-            const consoleState = responses[2]
-            const agents = responses[3]
-            const config = responses[4]
-            const sessions = responses[5]
-
-            batch(() => {
-              setStore("provider", reconcile(providers.providers))
-              setStore("provider_default", reconcile(providers.default))
-              setStore("provider_next", reconcile(providerList))
-              setStore("console_state", reconcile(consoleState))
-              setStore("agent", reconcile(agents))
-              setStore("config", reconcile(config))
-              if (sessions !== undefined) setStore("session", reconcile(sessions))
-            })
+          batch(() => {
+            setStore("provider", reconcile(providers.providers))
+            setStore("provider_default", reconcile(providers.default))
+            setStore("agent", reconcile(agents))
+            setStore("config", reconcile(config))
+            if (sessions !== undefined) setStore("session", reconcile(sessions))
           })
         })
         .then(() => {
-          if (store.status !== "complete") setStore("status", "partial")
-          // non-blocking
+          if (store.status !== "complete") {
+            setStore("status", "partial")
+            StartupTrace.mark("sync.bootstrap.partial")
+          }
           void Promise.all([
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
+            providerListPromise.then((x) => setStore("provider_next", reconcile(x.data!))),
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
             sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
@@ -503,6 +495,7 @@ export const {
             project.workspace.sync(),
           ]).then(() => {
             setStore("status", "complete")
+            StartupTrace.mark("sync.bootstrap.complete")
           })
         })
         .catch(async (e) => {

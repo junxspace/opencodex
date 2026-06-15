@@ -4,7 +4,6 @@ import { type rpc } from "../tui/worker"
 import path from "path"
 import { fileURLToPath } from "url"
 import { UI } from "@/cli/ui"
-import { errorMessage } from "@opencode-ai/tui/util/error"
 import { withTimeout } from "@/util/timeout"
 import { withNetworkOptions, resolveNetworkOptionsNoConfig } from "@/cli/network"
 import { Filesystem } from "@/util/filesystem"
@@ -12,9 +11,8 @@ import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import type { EventSource } from "@opencode-ai/tui/context/sdk"
 import { writeHeapSnapshot } from "v8"
 import { validateSession } from "../tui/validate-session"
-import { win32InstallCtrlCGuard } from "@opencode-ai/tui/terminal-win32"
-import { resetTerminalState } from "@opencode-ai/tui/util/terminal"
 import { invocationDirectory } from "../invocation-directory"
+import { StartupTrace } from "@opencode-ai/core/util/startup-trace"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -78,6 +76,11 @@ export function resolveThreadDirectory(
   return Filesystem.resolve(cwd)
 }
 
+const runtimeImports = Promise.all([import("effect"), import("../tui/layer")]).then((mods) => {
+  StartupTrace.mark("tui.imports.done")
+  return { Effect: mods[0].Effect, run: mods[1].run }
+})
+
 export const TuiThreadCommand = cmd({
   command: "$0 [project]",
   describe: "start opencode tui",
@@ -115,17 +118,17 @@ export const TuiThreadCommand = cmd({
         describe: "agent to use",
       }),
   handler: async (args) => {
+    const { win32InstallCtrlCGuard } = await import("@opencode-ai/tui/terminal-win32")
+    StartupTrace.mark("tui.handler.start")
     const unguard = win32InstallCtrlCGuard()
+    let pluginHost: Awaited<ReturnType<typeof import("@/plugin/tui/runtime")["createLegacyTuiPluginHost"]>> | undefined
     try {
-      const { TuiConfig } = await import("@/config/tui")
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")
         process.exitCode = 1
         return
       }
 
-      // Resolve relative --project paths from PWD, then use the real cwd after
-      // chdir so the thread and worker share the same directory key.
       const next = resolveThreadDirectory(args.project)
       const file = await target()
       try {
@@ -135,9 +138,17 @@ export const TuiThreadCommand = cmd({
         return
       }
       const cwd = Filesystem.resolve(process.cwd())
+      StartupTrace.mark("tui.chdir.done", { directory: cwd })
 
       const worker = new Worker(file)
       const client = Rpc.client<typeof rpc>(worker)
+      StartupTrace.mark("tui.worker.spawned")
+      client.call("warmup", { directory: cwd }).catch(() => {})
+      StartupTrace.mark("tui.warmup.sent")
+
+      StartupTrace.mark("tui.imports.start")
+      const imports = runtimeImports
+
       const reload = () => {
         client.call("reload", undefined).catch(() => {})
       }
@@ -152,8 +163,14 @@ export const TuiThreadCommand = cmd({
         worker.terminate()
       }
 
-      const prompt = await input(args.prompt)
-      const config = await TuiConfig.get()
+      const [config, prompt, , { createLegacyTuiPluginHost }] = await Promise.all([
+        import("@/config/tui").then((mod) => mod.TuiConfig.get()),
+        input(args.prompt),
+        imports,
+        import("@/plugin/tui/runtime"),
+      ])
+      pluginHost = createLegacyTuiPluginHost()
+      StartupTrace.mark("tui.config.done")
 
       const network = resolveNetworkOptionsNoConfig(args)
       const external =
@@ -184,19 +201,20 @@ export const TuiThreadCommand = cmd({
           fetch: transport.fetch,
         })
       } catch (error) {
+        const { errorMessage } = await import("@opencode-ai/tui/util/error")
         UI.error(errorMessage(error))
         process.exitCode = 1
         return
       }
+      StartupTrace.mark("tui.validate.done")
 
       setTimeout(() => {
         client.call("checkUpgrade", { directory: cwd }).catch(() => {})
       }, 1000).unref?.()
 
       try {
-        const { Effect } = await import("effect")
-        const { run } = await import("../tui/layer")
-        const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
+        StartupTrace.mark("tui.run.start")
+        const { Effect, run } = await imports
         await Effect.runPromise(
           run({
             url: transport.url,
@@ -206,7 +224,7 @@ export const TuiThreadCommand = cmd({
               return [tui, server]
             },
             config,
-            pluginHost: createLegacyTuiPluginHost(),
+            pluginHost,
             directory: cwd,
             fetch: transport.fetch,
             events: transport.events,
@@ -221,6 +239,7 @@ export const TuiThreadCommand = cmd({
           }),
         )
       } finally {
+        await pluginHost?.dispose().catch(() => {})
         await stop()
       }
     } finally {
@@ -228,8 +247,8 @@ export const TuiThreadCommand = cmd({
         unguard?.()
       } catch {}
     }
+    const { resetTerminalState } = await import("@opencode-ai/tui/util/terminal")
     resetTerminalState()
     process.exit(0)
   },
 })
-// scratch

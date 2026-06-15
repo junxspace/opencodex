@@ -12,6 +12,7 @@ import { useEditorContext } from "../context/editor"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTuiConfig } from "../config"
 import { HomeSessionDestinationProvider } from "./home/session-destination"
+import { StartupTrace } from "@opencode-ai/core/util/startup-trace"
 
 let once = false
 const placeholder = {
@@ -39,6 +40,7 @@ export function Home() {
 
   onMount(() => {
     editor.clearSelection()
+    StartupTrace.mark("tui.prompt.mount")
   })
 
   const bind = (r: PromptRef | undefined) => {

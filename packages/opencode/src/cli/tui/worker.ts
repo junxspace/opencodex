@@ -12,6 +12,10 @@ import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import * as Log from "@opencode-ai/core/util/log"
 import { InstallationLocal } from "@opencode-ai/core/installation/version"
+import { StartupTrace } from "@opencode-ai/core/util/startup-trace"
+
+const trace = StartupTrace.child("worker")
+trace("module")
 
 const level = (() => {
   const fromEnv = process.env.OPENCODE_LOG_LEVEL?.toUpperCase()
@@ -36,6 +40,7 @@ GlobalBus.on("event", (event) => {
 
 const { setupNotification } = await import("@/notification/webhook")
 await setupNotification()
+trace("notification")
 
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
 
@@ -72,6 +77,11 @@ export const rpc = {
     await InstanceRuntime.load({ directory: input.directory })
     await upgrade().catch(() => {})
   },
+  async warmup(input: { directory: string }) {
+    trace("warmup.start")
+    await InstanceRuntime.load({ directory: input.directory })
+    trace("warmup.done")
+  },
   async reload() {
     await AppRuntime.runPromise(
       Effect.gen(function* () {
@@ -88,3 +98,4 @@ export const rpc = {
 }
 
 Rpc.listen(rpc)
+trace("rpc.listen")
