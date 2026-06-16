@@ -438,7 +438,7 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
       background: transparent,
       backgroundPanel: transparent,
       backgroundElement: transparent,
-      backgroundMenu: transparent,
+      backgroundMenu: grays[3],
 
       // Border colors
       borderSubtle: grays[9],

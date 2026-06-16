@@ -75,7 +75,7 @@ test("generateSystem uses transparent panel backgrounds", () => {
   expect(resolved.background.a).toBe(0)
   expect(resolved.backgroundPanel.a).toBe(0)
   expect(resolved.backgroundElement.a).toBe(0)
-  expect(resolved.backgroundMenu.a).toBe(0)
+  expect(resolved.backgroundMenu.a).not.toBe(0)
 })
 
 test("custom theme precedence follows directory order", async () => {
