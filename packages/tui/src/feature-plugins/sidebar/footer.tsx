@@ -3,6 +3,8 @@ import type { BuiltinTuiPlugin } from "../builtins"
 import { createMemo, Show } from "solid-js"
 import { abbreviateHome } from "../../runtime"
 import { useTuiPaths } from "../../context/runtime"
+import { elementFilled } from "../../context/theme"
+import { PanelBorder, FULL_PANEL_BORDER } from "../../ui/border"
 
 const id = "internal:sidebar-footer"
 
@@ -33,7 +35,10 @@ function View(props: { api: TuiPluginApi; sessionID: string }) {
     <box gap={1}>
       <Show when={show()}>
         <box
-          backgroundColor={theme().backgroundElement}
+          backgroundColor={elementFilled(theme()) ? theme().backgroundElement : undefined}
+          border={elementFilled(theme()) ? undefined : FULL_PANEL_BORDER}
+          borderColor={theme().border}
+          customBorderChars={elementFilled(theme()) ? undefined : PanelBorder.customBorderChars}
           paddingTop={1}
           paddingBottom={1}
           paddingLeft={2}

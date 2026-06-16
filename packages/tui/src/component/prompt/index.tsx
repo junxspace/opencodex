@@ -15,8 +15,8 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { tint, useTheme } from "../../context/theme"
-import { EmptyBorder, SplitBorder } from "../../ui/border"
+import { tint, elementFilled, useTheme } from "../../context/theme"
+import { EmptyBorder, SplitBorder, PanelBorder, FULL_PANEL_BORDER } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { useClipboard } from "../../context/clipboard"
 import { Spinner } from "../spinner"
@@ -253,7 +253,7 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.disabled) input.cursorColor = theme.backgroundElement
+    if (props.disabled) input.cursorColor = elementFilled(theme) ? theme.backgroundElement : theme.textMuted
     if (!props.disabled) input.cursorColor = theme.text
   })
 
@@ -1366,19 +1366,23 @@ export function Prompt(props: PromptProps) {
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
         <box
           width="100%"
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
-          }}
+          border={elementFilled(theme) ? ["left"] : FULL_PANEL_BORDER}
+          borderColor={elementFilled(theme) ? borderHighlight() : theme.border}
+          customBorderChars={
+            elementFilled(theme)
+              ? {
+                  ...SplitBorder.customBorderChars,
+                  bottomLeft: "╹",
+                }
+              : PanelBorder.customBorderChars
+          }
         >
           <box
             paddingLeft={2}
             paddingRight={2}
             paddingTop={1}
             flexShrink={0}
-            backgroundColor={theme.backgroundElement}
+            backgroundColor={elementFilled(theme) ? theme.backgroundElement : undefined}
             flexGrow={1}
             width="100%"
           >
@@ -1451,8 +1455,8 @@ export function Prompt(props: PromptProps) {
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => r.target?.focus()}
-              focusedBackgroundColor={theme.backgroundElement}
-              cursorColor={props.disabled ? theme.backgroundElement : theme.text}
+              focusedBackgroundColor={elementFilled(theme) ? theme.backgroundElement : undefined}
+              cursorColor={props.disabled ? (elementFilled(theme) ? theme.backgroundElement : theme.textMuted) : theme.text}
               syntaxStyle={syntax()}
             />
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
@@ -1495,32 +1499,27 @@ export function Prompt(props: PromptProps) {
             </box>
           </box>
         </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-          }}
-        >
+        <Show when={elementFilled(theme)}>
           <box
             height={1}
-            border={["bottom"]}
-            borderColor={theme.backgroundElement}
-            customBorderChars={
-              theme.backgroundElement.a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
-        </box>
+            border={["left"]}
+            borderColor={borderHighlight()}
+            customBorderChars={{
+              ...EmptyBorder,
+              vertical: "╹",
+            }}
+          >
+            <box
+              height={1}
+              border={["bottom"]}
+              borderColor={theme.backgroundElement}
+              customBorderChars={{
+                ...EmptyBorder,
+                horizontal: "▀",
+              }}
+            />
+          </box>
+        </Show>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>
             <Match when={status().type !== "idle"}>

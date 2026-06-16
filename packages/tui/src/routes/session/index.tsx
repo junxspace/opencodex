@@ -21,10 +21,10 @@ import { useRoute, useRouteData } from "../../context/route"
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
 import { useEvent } from "../../context/event"
-import { SplitBorder } from "../../ui/border"
+import { SplitBorder, PanelBorder, FULL_PANEL_BORDER } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
-import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
+import { createSyntaxStyleMemo, generateSubtleSyntax, panelFilled, selectedForeground, useTheme } from "../../context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
@@ -1212,15 +1212,15 @@ export function Session() {
                               onMouseUp={handleUnrevert}
                               marginTop={1}
                               flexShrink={0}
-                              border={["left"]}
-                              customBorderChars={SplitBorder.customBorderChars}
-                              borderColor={theme.backgroundPanel}
+                              border={panelFilled(theme) ? ["left"] : FULL_PANEL_BORDER}
+                              customBorderChars={panelFilled(theme) ? SplitBorder.customBorderChars : PanelBorder.customBorderChars}
+                              borderColor={panelFilled(theme) ? theme.backgroundPanel : hover() ? theme.borderActive : theme.border}
                             >
                               <box
                                 paddingTop={1}
                                 paddingBottom={1}
                                 paddingLeft={2}
-                                backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+                                backgroundColor={panelFilled(theme) ? (hover() ? theme.backgroundElement : theme.backgroundPanel) : undefined}
                               >
                                 <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
                                 <text fg={theme.textMuted}>
@@ -1393,25 +1393,23 @@ function UserMessage(props: {
       <Show when={text()}>
         <box
           id={props.message.id}
-          border={["left"]}
-          borderColor={color()}
-          customBorderChars={SplitBorder.customBorderChars}
           marginTop={props.index === 0 ? 0 : 1}
+          onMouseOver={() => {
+            setHover(true)
+          }}
+          onMouseOut={() => {
+            setHover(false)
+          }}
+          onMouseUp={props.onMouseUp}
+          paddingTop={1}
+          paddingBottom={1}
+          paddingLeft={2}
+          backgroundColor={panelFilled(theme) ? (hover() ? theme.backgroundElement : theme.backgroundPanel) : undefined}
+          border={panelFilled(theme) ? undefined : FULL_PANEL_BORDER}
+          borderColor={panelFilled(theme) ? undefined : hover() ? theme.borderActive : theme.border}
+          customBorderChars={panelFilled(theme) ? undefined : PanelBorder.customBorderChars}
+          flexShrink={0}
         >
-          <box
-            onMouseOver={() => {
-              setHover(true)
-            }}
-            onMouseOut={() => {
-              setHover(false)
-            }}
-            onMouseUp={props.onMouseUp}
-            paddingTop={1}
-            paddingBottom={1}
-            paddingLeft={2}
-            backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
-            flexShrink={0}
-          >
             <text fg={theme.text}>{text()}</text>
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
@@ -1448,7 +1446,6 @@ function UserMessage(props: {
                 <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
               </text>
             </Show>
-          </box>
         </box>
       </Show>
       <Show when={compaction()}>
@@ -1538,13 +1535,13 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       </Show>
       <Show when={props.message.error && props.message.error.name !== "MessageAbortedError"}>
         <box
-          border={["left"]}
+          border={panelFilled(theme) ? ["left"] : FULL_PANEL_BORDER}
           paddingTop={1}
           paddingBottom={1}
           paddingLeft={2}
           marginTop={1}
-          backgroundColor={theme.backgroundPanel}
-          customBorderChars={SplitBorder.customBorderChars}
+          backgroundColor={panelFilled(theme) ? theme.backgroundPanel : undefined}
+          customBorderChars={panelFilled(theme) ? SplitBorder.customBorderChars : PanelBorder.customBorderChars}
           borderColor={theme.error}
         >
           <text fg={theme.textMuted}>{props.message.error?.data.message}</text>
@@ -2021,15 +2018,15 @@ function BlockTool(props: {
   return (
     <box
       id={props.part ? "tool-block-" + props.part.id : undefined}
-      border={["left"]}
+      border={panelFilled(theme) ? ["left"] : FULL_PANEL_BORDER}
       paddingTop={1}
       paddingBottom={1}
       paddingLeft={2}
       marginTop={1}
       gap={1}
-      backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundPanel}
-      customBorderChars={SplitBorder.customBorderChars}
-      borderColor={theme.background}
+      backgroundColor={panelFilled(theme) ? (hover() ? theme.backgroundMenu : theme.backgroundPanel) : undefined}
+      customBorderChars={panelFilled(theme) ? SplitBorder.customBorderChars : PanelBorder.customBorderChars}
+      borderColor={panelFilled(theme) ? theme.background : hover() ? theme.borderActive : theme.border}
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {

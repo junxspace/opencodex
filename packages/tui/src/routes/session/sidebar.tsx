@@ -1,10 +1,11 @@
 import { useProject } from "../../context/project"
 import { useSync } from "../../context/sync"
 import { createMemo, Show } from "solid-js"
-import { useTheme } from "../../context/theme"
+import { panelFilled, useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../config"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { usePluginRuntime } from "../../plugin/runtime"
+import { PanelBorder, FULL_PANEL_BORDER } from "../../ui/border"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { WorkspaceLabel } from "../../component/workspace-label"
@@ -26,7 +27,10 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   return (
     <Show when={session()}>
       <box
-        backgroundColor={theme.backgroundPanel}
+        backgroundColor={panelFilled(theme) ? theme.backgroundPanel : undefined}
+        border={panelFilled(theme) ? undefined : FULL_PANEL_BORDER}
+        borderColor={theme.border}
+        customBorderChars={panelFilled(theme) ? undefined : PanelBorder.customBorderChars}
         width={42}
         height="100%"
         paddingTop={1}

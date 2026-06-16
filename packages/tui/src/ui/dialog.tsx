@@ -1,12 +1,13 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
-import { useTheme } from "../context/theme"
+import { panelFilled, useTheme } from "../context/theme"
 import { MouseButton, Renderable, RGBA } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { useBindings, useOpencodeModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
+import { PanelBorder, FULL_PANEL_BORDER } from "./border"
 
 export function Dialog(
   props: ParentProps<{
@@ -54,7 +55,10 @@ export function Dialog(
         }}
         width={width()}
         maxWidth={dimensions().width - 2}
-        backgroundColor={theme.backgroundPanel}
+        backgroundColor={panelFilled(theme) ? theme.backgroundPanel : undefined}
+        border={FULL_PANEL_BORDER}
+        borderColor={theme.border}
+        customBorderChars={PanelBorder.customBorderChars}
         paddingTop={1}
       >
         {props.children}
