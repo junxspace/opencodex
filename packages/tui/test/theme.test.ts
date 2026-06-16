@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { TerminalColors } from "@opentui/core"
-import { DEFAULT_THEMES, addTheme, allThemes, hasTheme, resolveTheme, terminalMode } from "../src/theme"
+import { DEFAULT_THEMES, addTheme, allThemes, generateSystem, hasTheme, resolveTheme, terminalMode } from "../src/theme"
 import { discoverThemes } from "../src/context/theme"
 import { tmpdir } from "./fixture/fixture"
 
@@ -66,6 +66,16 @@ test("terminalMode derives mode from refreshed background", () => {
 
 test("terminalMode does not derive mode from ANSI slot zero", () => {
   expect(terminalMode(terminalColors(null, ["#000000"]))).toBeUndefined()
+})
+
+test("generateSystem uses transparent panel backgrounds", () => {
+  const colors = terminalColors("#1a1b26", ["#1a1b26", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6"])
+  const theme = generateSystem(colors, "dark")
+  const resolved = resolveTheme(theme, "dark")
+  expect(resolved.background.a).toBe(0)
+  expect(resolved.backgroundPanel.a).toBe(0)
+  expect(resolved.backgroundElement.a).toBe(0)
+  expect(resolved.backgroundMenu.a).toBe(0)
 })
 
 test("custom theme precedence follows directory order", async () => {

@@ -92,6 +92,14 @@ export type Theme = {
 type ThemeColor = Exclude<keyof Theme, "thinkingOpacity" | "_hasSelectedListItemText">
 export type SyntaxStyleOverrides = Record<string, { italic?: boolean }>
 
+export function panelFilled(theme: Pick<Theme, "backgroundPanel">) {
+  return theme.backgroundPanel.a !== 0
+}
+
+export function elementFilled(theme: Pick<Theme, "backgroundElement">) {
+  return theme.backgroundElement.a !== 0
+}
+
 export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
   // If theme explicitly defines selectedListItemText, use it
   if (theme._hasSelectedListItemText) {
@@ -422,14 +430,14 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
 
       // Background colors - use transparent to respect terminal transparency
       background: transparent,
-      backgroundPanel: grays[2],
-      backgroundElement: grays[3],
-      backgroundMenu: grays[3],
+      backgroundPanel: transparent,
+      backgroundElement: transparent,
+      backgroundMenu: transparent,
 
       // Border colors
-      borderSubtle: grays[6],
-      border: grays[7],
-      borderActive: grays[8],
+      borderSubtle: grays[9],
+      border: grays[11],
+      borderActive: grays[12],
 
       // Diff colors
       diffAdded: ansiColors.green,
