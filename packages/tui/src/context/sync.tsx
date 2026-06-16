@@ -161,6 +161,12 @@ export const {
         .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
+    function refreshMcp(workspace: string | undefined) {
+      return sdk.client.mcp.status(workspace ? { workspace } : {}).then((x) => {
+        if (x.data) setStore("mcp", reconcile(x.data))
+      })
+    }
+
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
@@ -243,6 +249,10 @@ export const {
 
         case "todo.updated":
           setStore("todo", event.properties.sessionID, event.properties.todos)
+          break
+
+        case "mcp.tools.changed":
+          void refreshMcp(workspace)
           break
 
         case "session.diff":

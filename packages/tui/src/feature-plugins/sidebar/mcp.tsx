@@ -60,6 +60,7 @@ function View(props: { api: TuiPluginApi }) {
                   <span style={{ fg: theme().textMuted }}>
                     <Switch fallback={item.status}>
                       <Match when={item.status === "connected"}>Connected</Match>
+                      <Match when={(item.status as string) === "idle"}>Idle</Match>
                       <Match when={item.status === "failed"}>
                         <i>{item.error}</i>
                       </Match>

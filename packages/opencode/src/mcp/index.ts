@@ -545,6 +545,7 @@ export const layer = Layer.effect(
       s.clients[name] = client
       s.defs[name] = listed
       watch(s, name, client, bridge, timeout)
+      yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
       return s.status[name]
     })
 
@@ -604,6 +605,7 @@ export const layer = Layer.effect(
       yield* closeClient(s, name)
       delete s.clients[name]
       s.status[name] = isLazy(mcp) ? { status: "idle" } : { status: "disabled" }
+      yield* events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
     })
 
     function requestTimeout(s: State, name: string, configured: McpEntry | undefined, fallback?: number) {
