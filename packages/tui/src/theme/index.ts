@@ -100,6 +100,12 @@ export function elementFilled(theme: Pick<Theme, "backgroundElement">) {
   return theme.backgroundElement.a !== 0
 }
 
+export function overlayBackground(theme: Pick<Theme, "backgroundPanel" | "backgroundElement" | "selectedListItemText">) {
+  if (theme.backgroundPanel.a !== 0) return theme.backgroundPanel
+  if (theme.backgroundElement.a !== 0) return theme.backgroundElement
+  return theme.selectedListItemText
+}
+
 export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
   // If theme explicitly defines selectedListItemText, use it
   if (theme._hasSelectedListItemText) {

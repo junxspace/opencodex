@@ -1,6 +1,6 @@
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { batch, createContext, createEffect, onCleanup, Show, useContext, type JSX, type ParentProps } from "solid-js"
-import { panelFilled, useTheme } from "../context/theme"
+import { overlayBackground, useTheme } from "../context/theme"
 import { MouseButton, Renderable, RGBA } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
@@ -55,7 +55,7 @@ export function Dialog(
         }}
         width={width()}
         maxWidth={dimensions().width - 2}
-        backgroundColor={panelFilled(theme) ? theme.backgroundPanel : undefined}
+        backgroundColor={overlayBackground(theme)}
         border={FULL_PANEL_BORDER}
         borderColor={theme.border}
         customBorderChars={PanelBorder.customBorderChars}

@@ -1,6 +1,6 @@
 import { createContext, useContext, type ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { panelFilled, useTheme } from "../context/theme"
+import { overlayBackground, useTheme } from "../context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
 import { PanelBorder, FULL_PANEL_BORDER } from "./border"
 import { TextAttributes } from "@opentui/core"
@@ -31,7 +31,7 @@ export function Toast() {
           paddingRight={2}
           paddingTop={1}
           paddingBottom={1}
-          backgroundColor={panelFilled(theme) ? theme.backgroundPanel : undefined}
+          backgroundColor={overlayBackground(theme)}
           borderColor={theme[current().variant]}
           border={FULL_PANEL_BORDER}
           customBorderChars={PanelBorder.customBorderChars}
