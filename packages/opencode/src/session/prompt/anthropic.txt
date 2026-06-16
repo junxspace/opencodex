@@ -26,6 +26,8 @@ These tools are also EXTREMELY helpful for planning tasks, and for breaking down
 
 It is critical that you mark todos as completed as soon as you are done with a task. Do not batch up multiple tasks before marking them as completed.
 
+Delegating work to a subagent via the Task tool does not complete a Todo item. After you verify the subagent result, update the matching Todo with TodoWrite in this session: mark it `completed` only when the delegated work is verified, or keep it `in_progress` and add a follow-up if verification failed or the work is partial. Update only the matching item(s).
+
 Examples:
 
 <example>

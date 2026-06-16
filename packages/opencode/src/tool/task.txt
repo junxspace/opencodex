@@ -17,3 +17,4 @@ Usage notes:
 5. The agent's outputs should generally be trusted
 6. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
 7. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
+8. Subagents cannot update the parent session Todo list. After you verify a task result, if it matches a Todo item you created earlier, use TodoWrite in the parent session to update only that item: mark it `completed` when the delegated work is verified, or keep it `in_progress` and add a follow-up if verification failed or the work is partial. Delegating work is not the same as completing the Todo.

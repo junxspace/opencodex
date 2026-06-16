@@ -271,45 +271,44 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     }
 
     while (true) {
-      if (args.confirm || args.dryRun) {
+      if (args.dryRun) {
         out("")
         out(ui.commitMessageBlock(msg))
+        out(ui.warn("Dry run: commit not created"))
+        break
       }
 
-      const action = args.confirm || args.dryRun
-        ? await (args.selectAction ?? selectAction)(msg, intent, index + 1, intents.length)
-        : "commit"
-      if (action === "cancel") {
-        out(ui.info("Cancelled"))
-        return { commitCount, pushed: false, pushFailed: false }
-      }
-      if (action === "edit") {
-        const next = await (args.edit ?? edit)(msg)
-        if (!next) {
+      if (args.confirm) {
+        out("")
+        out(ui.commitMessageBlock(msg))
+        const action = await (args.selectAction ?? selectAction)(msg, intent, index + 1, intents.length)
+        if (action === "cancel") {
           out(ui.info("Cancelled"))
           return { commitCount, pushed: false, pushFailed: false }
         }
-        msg = next
-        continue
-      }
-      if (action === "regenerate") {
-        prev = msg
-        const result = await gen({
-          path: root,
-          selectedFiles: nonLockFiles(intent.files),
-          previousMessage: prev,
-          prompt: args.prompt,
-          model: args.model,
-          instance: args.instance,
-          intent: { files: intent.files, description: intent.description },
-        })
-        msg = result.message
-        continue
-      }
-
-      if (args.dryRun) {
-        out(ui.warn("Dry run: commit not created"))
-        break
+        if (action === "edit") {
+          const next = await (args.edit ?? edit)(msg)
+          if (!next) {
+            out(ui.info("Cancelled"))
+            return { commitCount, pushed: false, pushFailed: false }
+          }
+          msg = next
+          continue
+        }
+        if (action === "regenerate") {
+          prev = msg
+          const result = await gen({
+            path: root,
+            selectedFiles: nonLockFiles(intent.files),
+            previousMessage: prev,
+            prompt: args.prompt,
+            model: args.model,
+            instance: args.instance,
+            intent: { files: intent.files, description: intent.description },
+          })
+          msg = result.message
+          continue
+        }
       }
 
       if (!args.confirm) out(ui.intentHeader(index + 1, intents.length, msg, intent.files))

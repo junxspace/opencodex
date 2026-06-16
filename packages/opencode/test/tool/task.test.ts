@@ -243,6 +243,8 @@ describe("tool.task", () => {
       expect(kids[0]?.id).toBe(child.id)
       expect(result.metadata.sessionId).toBe(child.id)
       expect(result.output).toContain(`<task id="${child.id}" state="completed">`)
+      expect(result.output).toContain("<system-reminder>")
+      expect(result.output).toContain("TodoWrite")
       expect(seen?.sessionID).toBe(child.id)
       expect(seen?.variant).toBe("xhigh")
     }),
@@ -536,12 +538,18 @@ describe("tool.task", () => {
       const result = yield* Fiber.join(fiber)
       expect(result.metadata.background).toBe(true)
       expect(result.output).toContain(`state="running"`)
+      expect(result.output).not.toContain("<system-reminder>")
       expect((yield* jobs.get(result.metadata.sessionId))?.status).toBe("running")
       expect(runs).toBe(1)
 
       yield* Deferred.succeed(done, undefined)
       expect((yield* jobs.wait({ id: result.metadata.sessionId })).info?.output).toBe("background done")
-      expect((yield* Deferred.await(injected)).parts[0]?.type).toBe("text")
+      const injectedInput = yield* Deferred.await(injected)
+      expect(injectedInput.parts[0]?.type).toBe("text")
+      if (injectedInput.parts[0]?.type === "text") {
+        expect(injectedInput.parts[0].text).toContain("<system-reminder>")
+        expect(injectedInput.parts[0].text).toContain("TodoWrite")
+      }
       expect(runs).toBe(1)
     }),
   )
@@ -580,6 +588,7 @@ describe("tool.task", () => {
       const job = yield* jobs.get(result.metadata.sessionId)
       expect(result.metadata.background).toBe(true)
       expect(result.output).toContain(`state="running"`)
+      expect(result.output).not.toContain("<system-reminder>")
       expect(job?.status).toBe("running")
     }),
   )

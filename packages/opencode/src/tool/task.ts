@@ -39,6 +39,19 @@ const BACKGROUND_UPDATED = [
   "DO NOT sleep, poll for progress, ask the task for status, or duplicate this task's work — avoid working with the same files or topics it is using.",
   "Work on non-overlapping tasks, or briefly tell the user what you sent and end your response.",
 ].join("\n")
+const TASK_COMPLETED_TODO_REMINDER = [
+  "<system-reminder>",
+  "If this task matches an item on your session Todo list, use TodoWrite after you verify the result:",
+  "mark that item completed, or keep it in_progress and add a follow-up if verification failed or work is partial.",
+  "Update only the matching item(s); do not rewrite unrelated todos.",
+  "</system-reminder>",
+].join("\n")
+const TASK_ERROR_TODO_REMINDER = [
+  "<system-reminder>",
+  "If this task matches a session Todo item, keep it in_progress or add a follow-up todo describing the failure.",
+  "Do not mark it completed.",
+  "</system-reminder>",
+].join("\n")
 
 const BaseParameterFields = {
   description: Schema.String.annotate({ description: "A short (3-5 words) description of the task" }),
@@ -68,7 +81,7 @@ function renderOutput(input: {
   text: string
 }) {
   const tag = input.state === "error" ? "task_error" : "task_result"
-  return [
+  const task = [
     `<task id="${input.sessionID}" state="${input.state}">`,
     ...(input.summary ? [`<summary>${input.summary}</summary>`] : []),
     `<${tag}>`,
@@ -76,6 +89,9 @@ function renderOutput(input: {
     `</${tag}>`,
     "</task>",
   ].join("\n")
+  if (input.state === "completed") return `${task}\n${TASK_COMPLETED_TODO_REMINDER}`
+  if (input.state === "error") return `${task}\n${TASK_ERROR_TODO_REMINDER}`
+  return task
 }
 
 export const TaskTool = Tool.define(
