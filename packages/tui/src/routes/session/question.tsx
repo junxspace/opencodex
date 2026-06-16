@@ -2,7 +2,7 @@ import { createStore } from "solid-js/store"
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useRenderer } from "@opentui/solid"
 import type { TextareaRenderable } from "@opentui/core"
-import { selectedForeground, tint, useTheme } from "../../context/theme"
+import { listSelectionBackground, selectedForeground, tint, useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
 import { SplitBorder } from "../../ui/border"
@@ -14,6 +14,7 @@ const QUESTION_MODE = "question"
 export function QuestionPrompt(props: { request: QuestionRequest; directory?: string }) {
   const sdk = useSDK()
   const { theme } = useTheme()
+  const selectionBg = () => listSelectionBackground(theme)
   const renderer = useRenderer()
   const tuiConfig = useTuiConfig()
   const modeStack = useOpencodeModeStack()
@@ -374,13 +375,13 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                         selectOption()
                       }}
                     >
-                      <box flexDirection="row">
-                        <box backgroundColor={active() ? theme.backgroundElement : undefined} paddingRight={1}>
+                      <box flexDirection="row" backgroundColor={active() ? selectionBg() : undefined}>
+                        <box paddingRight={1}>
                           <text fg={active() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
                             {`${i() + 1}.`}
                           </text>
                         </box>
-                        <box backgroundColor={active() ? theme.backgroundElement : undefined}>
+                        <box>
                           <text fg={active() ? theme.secondary : picked() ? theme.success : theme.text}>
                             {multi() ? `[${picked() ? "✓" : " "}] ${opt.label}` : opt.label}
                           </text>
@@ -406,13 +407,13 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
                     selectOption()
                   }}
                 >
-                  <box flexDirection="row">
-                    <box backgroundColor={other() ? theme.backgroundElement : undefined} paddingRight={1}>
+                  <box flexDirection="row" backgroundColor={other() ? selectionBg() : undefined}>
+                    <box paddingRight={1}>
                       <text fg={other() ? tint(theme.textMuted, theme.secondary, 0.6) : theme.textMuted}>
                         {`${options().length + 1}.`}
                       </text>
                     </box>
-                    <box backgroundColor={other() ? theme.backgroundElement : undefined}>
+                    <box>
                       <text fg={other() ? theme.secondary : customPicked() ? theme.success : theme.text}>
                         {multi() ? `[${customPicked() ? "✓" : " "}] Type your own answer` : "Type your own answer"}
                       </text>

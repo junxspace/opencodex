@@ -1,13 +1,15 @@
 import { TextAttributes } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { For } from "solid-js"
-import { useTheme } from "../context/theme"
+import { useTheme, listSelectionBackground, listSelectionForeground } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { useBindings } from "../keymap"
 
 export function DialogWorkspaceUnavailable(props: { onRestore?: () => boolean | void | Promise<boolean | void> }) {
   const dialog = useDialog()
   const { theme } = useTheme()
+  const selectionBg = () => listSelectionBackground(theme)
+  const selectionFg = () => listSelectionForeground(theme)
   const [store, setStore] = createStore({
     active: "restore" as "cancel" | "restore",
   })
@@ -53,13 +55,13 @@ export function DialogWorkspaceUnavailable(props: { onRestore?: () => boolean | 
             <box
               paddingLeft={2}
               paddingRight={2}
-              backgroundColor={item === store.active ? theme.primary : undefined}
+              backgroundColor={item === store.active ? selectionBg() : undefined}
               onMouseUp={() => {
                 setStore("active", item)
                 void confirm()
               }}
             >
-              <text fg={item === store.active ? theme.selectedListItemText : theme.textMuted}>{item}</text>
+              <text fg={item === store.active ? selectionFg() : theme.textMuted}>{item}</text>
             </box>
           )}
         </For>

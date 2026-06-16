@@ -100,24 +100,39 @@ export function elementFilled(theme: Pick<Theme, "backgroundElement">) {
   return theme.backgroundElement.a !== 0
 }
 
-export function overlayBackground(theme: Pick<Theme, "backgroundPanel" | "backgroundElement" | "selectedListItemText">) {
-  if (theme.backgroundPanel.a !== 0) return theme.backgroundPanel
-  if (theme.backgroundElement.a !== 0) return theme.backgroundElement
-  return theme.selectedListItemText
+export function listSelectionBackground(theme: Theme, accent: RGBA = theme.primary): RGBA {
+  if (elementFilled(theme)) return accent
+  return tint(theme.backgroundMenu, accent, 0.22)
+}
+
+export function listSelectionForeground(theme: Theme, accent?: RGBA): RGBA {
+  const color = accent ?? theme.primary
+  if (elementFilled(theme)) return selectedForeground(theme, color)
+  return theme.text
+}
+
+export function listSelectionMutedForeground(theme: Theme, accent?: RGBA): RGBA {
+  const color = accent ?? theme.primary
+  if (elementFilled(theme)) return selectedForeground(theme, color)
+  return theme.textMuted
+}
+
+export function contrastForeground(bg: RGBA): RGBA {
+  const luminance = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b
+  return luminance > 0.5 ? RGBA.fromInts(0, 0, 0) : RGBA.fromInts(255, 255, 255)
 }
 
 export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
+  if (bg !== undefined) return contrastForeground(bg)
+
   // If theme explicitly defines selectedListItemText, use it
   if (theme._hasSelectedListItemText) {
     return theme.selectedListItemText
   }
 
-  // For transparent backgrounds, calculate contrast based on the actual bg (or fallback to primary)
+  // For transparent backgrounds, calculate contrast based on primary
   if (theme.background.a === 0) {
-    const targetColor = bg ?? theme.primary
-    const { r, g, b } = targetColor
-    const luminance = 0.299 * r + 0.587 * g + 0.114 * b
-    return luminance > 0.5 ? RGBA.fromInts(0, 0, 0) : RGBA.fromInts(255, 255, 255)
+    return contrastForeground(theme.primary)
   }
 
   // Fall back to background color
@@ -432,7 +447,7 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
       // Text colors
       text: fg,
       textMuted,
-      selectedListItemText: bg,
+      selectedListItemText: contrastForeground(ansiColors.cyan),
 
       // Background colors - use transparent to respect terminal transparency
       background: transparent,

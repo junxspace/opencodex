@@ -2,7 +2,18 @@ import { expect, test } from "bun:test"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { TerminalColors } from "@opentui/core"
-import { DEFAULT_THEMES, addTheme, allThemes, generateSystem, hasTheme, resolveTheme, terminalMode } from "../src/theme"
+import {
+  contrastForeground,
+  DEFAULT_THEMES,
+  addTheme,
+  allThemes,
+  generateSystem,
+  hasTheme,
+  listSelectionBackground,
+  resolveTheme,
+  selectedForeground,
+  terminalMode,
+} from "../src/theme"
 import { discoverThemes } from "../src/context/theme"
 import { tmpdir } from "./fixture/fixture"
 
@@ -76,6 +87,27 @@ test("generateSystem uses transparent panel backgrounds", () => {
   expect(resolved.backgroundPanel.a).toBe(0)
   expect(resolved.backgroundElement.a).toBe(0)
   expect(resolved.backgroundMenu.a).not.toBe(0)
+})
+
+test("generateSystem selectedListItemText contrasts with primary", () => {
+  const colors = terminalColors("#fbf1c7", ["#fbf1c7", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a", "#7c6f64"])
+  const resolved = resolveTheme(generateSystem(colors, "light"), "light")
+  expect(resolved.selectedListItemText).toEqual(contrastForeground(resolved.primary))
+})
+
+test("selectedForeground honors explicit background", () => {
+  const colors = terminalColors("#1a1b26", ["#1a1b26", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6"])
+  const resolved = resolveTheme(generateSystem(colors, "dark"), "dark")
+  expect(selectedForeground(resolved, resolved.warning)).toEqual(contrastForeground(resolved.warning))
+})
+
+test("listSelectionBackground tints menu for transparent themes", () => {
+  const colors = terminalColors("#1a1b26", ["#1a1b26", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6"])
+  const resolved = resolveTheme(generateSystem(colors, "dark"), "dark")
+  const bg = listSelectionBackground(resolved)
+  expect(bg).not.toEqual(resolved.primary)
+  expect(bg.a).not.toBe(0)
+  expect(listSelectionBackground(resolved, resolved.warning)).not.toEqual(resolved.warning)
 })
 
 test("custom theme precedence follows directory order", async () => {

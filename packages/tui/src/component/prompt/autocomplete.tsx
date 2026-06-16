@@ -13,7 +13,7 @@ import { useData } from "../../context/data"
 import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiPaths } from "../../context/runtime"
 import { useTuiConfig } from "../../config"
-import { useTheme, selectedForeground } from "../../context/theme"
+import { useTheme, listSelectionBackground, listSelectionForeground, listSelectionMutedForeground } from "../../context/theme"
 import { SplitBorder } from "../../ui/border"
 import { useTerminalDimensions } from "@opentui/solid"
 import { Locale } from "../../util/locale"
@@ -91,6 +91,7 @@ export function Autocomplete(props: {
   const slashCommands = useSlashCommandLookup()
   const modeStack = useOpencodeModeStack()
   const { theme } = useTheme()
+  const selectionBg = createMemo(() => listSelectionBackground(theme))
   const dimensions = useTerminalDimensions()
   const frecency = useFrecency()
   const tuiConfig = useTuiConfig()
@@ -739,7 +740,7 @@ export function Autocomplete(props: {
             <box
               paddingLeft={1}
               paddingRight={1}
-              backgroundColor={index === store.selected ? theme.primary : undefined}
+              backgroundColor={index === store.selected ? selectionBg() : undefined}
               flexDirection="row"
               onMouseMove={() => {
                 setStore("input", "mouse")
@@ -754,11 +755,11 @@ export function Autocomplete(props: {
               }}
               onMouseUp={() => select()}
             >
-              <text fg={index === store.selected ? selectedForeground(theme) : theme.text} flexShrink={0}>
+              <text fg={index === store.selected ? listSelectionForeground(theme) : theme.text} flexShrink={0}>
                 {option().display}
               </text>
               <Show when={option().description}>
-                <text fg={index === store.selected ? selectedForeground(theme) : theme.textMuted} wrapMode="none">
+                <text fg={index === store.selected ? listSelectionMutedForeground(theme) : theme.textMuted} wrapMode="none">
                   {option().description}
                 </text>
               </Show>

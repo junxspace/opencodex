@@ -1,5 +1,5 @@
 import { TextareaRenderable, TextAttributes } from "@opentui/core"
-import { useTheme } from "../context/theme"
+import { useTheme, listSelectionBackground, listSelectionForeground } from "../context/theme"
 import { useDialog, type DialogContext } from "./dialog"
 import { createStore } from "solid-js/store"
 import { onMount, Show } from "solid-js"
@@ -24,6 +24,8 @@ export type DialogExportOptionsProps = {
 export function DialogExportOptions(props: DialogExportOptionsProps) {
   const dialog = useDialog()
   const { theme } = useTheme()
+  const selectionBg = () => listSelectionBackground(theme)
+  const selectionFg = () => listSelectionForeground(theme)
   let textarea: TextareaRenderable
   const [store, setStore] = createStore({
     thinking: props.defaultThinking,
@@ -123,49 +125,49 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
           flexDirection="row"
           gap={2}
           paddingLeft={1}
-          backgroundColor={store.active === "thinking" ? theme.backgroundElement : undefined}
+          backgroundColor={store.active === "thinking" ? selectionBg() : undefined}
           onMouseUp={() => setStore("active", "thinking")}
         >
-          <text fg={store.active === "thinking" ? theme.primary : theme.textMuted}>
+          <text fg={store.active === "thinking" ? selectionFg() : theme.textMuted}>
             {store.thinking ? "[x]" : "[ ]"}
           </text>
-          <text fg={store.active === "thinking" ? theme.primary : theme.text}>Include thinking</text>
+          <text fg={store.active === "thinking" ? selectionFg() : theme.text}>Include thinking</text>
         </box>
         <box
           flexDirection="row"
           gap={2}
           paddingLeft={1}
-          backgroundColor={store.active === "toolDetails" ? theme.backgroundElement : undefined}
+          backgroundColor={store.active === "toolDetails" ? selectionBg() : undefined}
           onMouseUp={() => setStore("active", "toolDetails")}
         >
-          <text fg={store.active === "toolDetails" ? theme.primary : theme.textMuted}>
+          <text fg={store.active === "toolDetails" ? selectionFg() : theme.textMuted}>
             {store.toolDetails ? "[x]" : "[ ]"}
           </text>
-          <text fg={store.active === "toolDetails" ? theme.primary : theme.text}>Include tool details</text>
+          <text fg={store.active === "toolDetails" ? selectionFg() : theme.text}>Include tool details</text>
         </box>
         <box
           flexDirection="row"
           gap={2}
           paddingLeft={1}
-          backgroundColor={store.active === "assistantMetadata" ? theme.backgroundElement : undefined}
+          backgroundColor={store.active === "assistantMetadata" ? selectionBg() : undefined}
           onMouseUp={() => setStore("active", "assistantMetadata")}
         >
-          <text fg={store.active === "assistantMetadata" ? theme.primary : theme.textMuted}>
+          <text fg={store.active === "assistantMetadata" ? selectionFg() : theme.textMuted}>
             {store.assistantMetadata ? "[x]" : "[ ]"}
           </text>
-          <text fg={store.active === "assistantMetadata" ? theme.primary : theme.text}>Include assistant metadata</text>
+          <text fg={store.active === "assistantMetadata" ? selectionFg() : theme.text}>Include assistant metadata</text>
         </box>
         <box
           flexDirection="row"
           gap={2}
           paddingLeft={1}
-          backgroundColor={store.active === "openWithoutSaving" ? theme.backgroundElement : undefined}
+          backgroundColor={store.active === "openWithoutSaving" ? selectionBg() : undefined}
           onMouseUp={() => setStore("active", "openWithoutSaving")}
         >
-          <text fg={store.active === "openWithoutSaving" ? theme.primary : theme.textMuted}>
+          <text fg={store.active === "openWithoutSaving" ? selectionFg() : theme.textMuted}>
             {store.openWithoutSaving ? "[x]" : "[ ]"}
           </text>
-          <text fg={store.active === "openWithoutSaving" ? theme.primary : theme.text}>Open without saving</text>
+          <text fg={store.active === "openWithoutSaving" ? selectionFg() : theme.text}>Open without saving</text>
         </box>
       </box>
       <Show when={store.active !== "filename"}>

@@ -136,6 +136,7 @@ export const {
 
     const fullSyncedSessions = new Set<string>()
     const syncingSessions = new Map<string, Promise<void>>()
+    const refreshingTodo = new Map<string, Promise<void>>()
     const hydratingSessions = new Map<string, { messages: Set<string>; parts: Set<string> }>()
     const touchMessage = (sessionID: string, messageID: string) => {
       hydratingSessions.get(sessionID)?.messages.add(messageID)
@@ -623,6 +624,20 @@ export const {
             hydratingSessions.delete(sessionID)
           })
           syncingSessions.set(sessionID, task)
+          return task
+        },
+        refreshTodo(sessionID: string) {
+          const existing = refreshingTodo.get(sessionID)
+          if (existing) return existing
+          const task = sdk.client.session
+            .todo({ sessionID })
+            .then((todo) => {
+              setStore("todo", sessionID, todo.data ?? [])
+            })
+            .finally(() => {
+              refreshingTodo.delete(sessionID)
+            })
+          refreshingTodo.set(sessionID, task)
           return task
         },
       },

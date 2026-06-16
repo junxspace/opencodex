@@ -1,5 +1,5 @@
 import { TextAttributes } from "@opentui/core"
-import { useTheme } from "../context/theme"
+import { useTheme, listSelectionBackground, listSelectionForeground, listSelectionMutedForeground } from "../context/theme"
 import { useDialog } from "../ui/dialog"
 import { createStore } from "solid-js/store"
 import { For } from "solid-js"
@@ -14,6 +14,9 @@ export function DialogSessionDeleteFailed(props: {
 }) {
   const dialog = useDialog()
   const { theme } = useTheme()
+  const selectionBg = () => listSelectionBackground(theme)
+  const selectionFg = () => listSelectionForeground(theme)
+  const selectionMuted = () => listSelectionMutedForeground(theme)
   const [store, setStore] = createStore({
     active: "delete" as "delete" | "restore",
   })
@@ -75,7 +78,7 @@ export function DialogSessionDeleteFailed(props: {
               paddingRight={1}
               paddingTop={1}
               paddingBottom={1}
-              backgroundColor={item.id === store.active ? theme.primary : undefined}
+              backgroundColor={item.id === store.active ? selectionBg() : undefined}
               onMouseUp={() => {
                 setStore("active", item.id)
                 void confirm()
@@ -83,11 +86,11 @@ export function DialogSessionDeleteFailed(props: {
             >
               <text
                 attributes={TextAttributes.BOLD}
-                fg={item.id === store.active ? theme.selectedListItemText : theme.text}
+                fg={item.id === store.active ? selectionFg() : theme.text}
               >
                 {item.title}
               </text>
-              <text fg={item.id === store.active ? theme.selectedListItemText : theme.textMuted} wrapMode="word">
+              <text fg={item.id === store.active ? selectionMuted() : theme.textMuted} wrapMode="word">
                 {item.description}
               </text>
             </box>

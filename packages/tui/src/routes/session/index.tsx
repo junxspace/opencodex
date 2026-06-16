@@ -322,6 +322,12 @@ export function Session() {
     if (part.type !== "tool") return
     if (part.sessionID !== route.sessionID) return
     if (part.state.status !== "completed") return
+
+    if (part.tool === "todowrite") {
+      void sync.session.refreshTodo(part.sessionID)
+      return
+    }
+
     if (part.id === lastSwitch) return
 
     if (part.tool === "plan_exit") {
@@ -349,6 +355,10 @@ export function Session() {
 
   event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
+    if (evt.properties.status.type === "idle") {
+      void sync.session.refreshTodo(evt.properties.sessionID)
+      return
+    }
     if (evt.properties.status.type !== "retry") return
     if (!evt.properties.status.action) return
     if (dialog.stack.length > 0) return
@@ -2470,10 +2480,15 @@ function ApplyPatch(props: ToolProps) {
 }
 
 function TodoWrite(props: ToolProps) {
-  const todos = createMemo(() => parseTodos(props.input.todos))
+  const todos = createMemo(() => {
+    if (props.part.state.status !== "completed") return parseTodos(props.input.todos)
+    const metadata = parseTodos(props.metadata.todos)
+    if (metadata.length) return metadata
+    return parseTodos(props.input.todos)
+  })
   return (
     <Switch>
-      <Match when={parseTodos(props.metadata.todos).length}>
+      <Match when={props.part.state.status === "completed" && todos().length}>
         <BlockTool title="# Todos" part={props.part}>
           <box>
             <For each={todos()}>{(todo) => <TodoItem status={todo.status} content={todo.content} />}</For>

@@ -1,7 +1,7 @@
 import { RGBA, TextAttributes } from "@opentui/core"
 import open from "open"
 import { createSignal } from "solid-js"
-import { selectedForeground, useTheme } from "../context/theme"
+import { listSelectionBackground, listSelectionForeground, useTheme } from "../context/theme"
 import { useDialog, type DialogContext } from "../ui/dialog"
 import { Link } from "../ui/link"
 import { BgPulse } from "./bg-pulse"
@@ -39,7 +39,8 @@ function panelOverlay(color: RGBA) {
 export function DialogRetryAction(props: DialogRetryActionProps) {
   const dialog = useDialog()
   const { theme } = useTheme()
-  const fg = selectedForeground(theme)
+  const selectionBg = () => listSelectionBackground(theme)
+  const fg = () => listSelectionForeground(theme)
   const showGoTreatment = () => props.link === GO_URL
   const textBg = () => (showGoTreatment() ? panelOverlay(theme.backgroundPanel) : undefined)
   const [selected, setSelected] = createSignal<"dismiss" | "action">("action")
@@ -114,12 +115,12 @@ export function DialogRetryAction(props: DialogRetryActionProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={selected() === "dismiss" ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+            backgroundColor={selected() === "dismiss" ? selectionBg() : RGBA.fromInts(0, 0, 0, 0)}
             onMouseOver={() => setSelected("dismiss")}
             onMouseUp={() => dismiss(props, dialog)}
           >
             <text
-              fg={selected() === "dismiss" ? fg : theme.textMuted}
+              fg={selected() === "dismiss" ? fg() : theme.textMuted}
               bg={selected() === "dismiss" ? undefined : textBg()}
               attributes={selected() === "dismiss" ? TextAttributes.BOLD : undefined}
             >
@@ -129,12 +130,12 @@ export function DialogRetryAction(props: DialogRetryActionProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={selected() === "action" ? theme.primary : RGBA.fromInts(0, 0, 0, 0)}
+            backgroundColor={selected() === "action" ? selectionBg() : RGBA.fromInts(0, 0, 0, 0)}
             onMouseOver={() => setSelected("action")}
             onMouseUp={() => runAction(props, dialog)}
           >
             <text
-              fg={selected() === "action" ? fg : theme.text}
+              fg={selected() === "action" ? fg() : theme.text}
               bg={selected() === "action" ? undefined : textBg()}
               attributes={selected() === "action" ? TextAttributes.BOLD : undefined}
             >

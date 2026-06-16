@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import type { ColorInput, RGBA, ScrollBoxRenderable } from "@opentui/core"
 import { Locale } from "../../util/locale"
-import { tint } from "../../context/theme"
+import { listSelectionBackground, listSelectionForeground, tint, type Theme } from "../../context/theme"
 import { createEffect, createMemo, For, Match, Switch } from "solid-js"
 import { buildFileTree, flattenFileTree, type FileTreeItem, type FileTreeRow } from "./diff-viewer-file-tree-utils"
 import { Panel } from "./diff-viewer-ui"
@@ -50,6 +50,8 @@ export function DiffViewerFileTree(props: DiffViewerFileTreeProps) {
   })
 
   const fadedColor = () => tint(props.theme.text, props.theme.background, 0.75)
+  const selectionBg = () => listSelectionBackground(props.theme as Theme)
+  const selectionFg = () => listSelectionForeground(props.theme as Theme)
 
   return (
     <Panel border="both" width={props.width}>
@@ -82,17 +84,17 @@ export function DiffViewerFileTree(props: DiffViewerFileTreeProps) {
                   <box
                     flexDirection="row"
                     width="100%"
-                    backgroundColor={highlighted() ? props.theme.primary : undefined}
+                    backgroundColor={highlighted() ? selectionBg() : undefined}
                     onMouseUp={() => props.onRowClick?.(row)}
                   >
-                    <text fg={highlighted() ? props.theme.background : fadedColor()} wrapMode="none" flexShrink={0}>
+                    <text fg={highlighted() ? selectionFg() : fadedColor()} wrapMode="none" flexShrink={0}>
                       {prefix()}
                     </text>
                     <box flexGrow={1} minWidth={0}>
                       <text
                         fg={
                           highlighted()
-                            ? props.theme.background
+                            ? selectionFg()
                             : selected()
                               ? props.theme.primary
                               : reviewed() || row.kind === "directory"
@@ -105,7 +107,7 @@ export function DiffViewerFileTree(props: DiffViewerFileTreeProps) {
                       </text>
                     </box>
                     <text
-                      fg={highlighted() ? props.theme.background : props.theme.textMuted}
+                      fg={highlighted() ? selectionFg() : props.theme.textMuted}
                       wrapMode="none"
                       flexShrink={0}
                     >
