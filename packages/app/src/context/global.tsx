@@ -2,6 +2,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createEffect, createMemo, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createServerProjects, ServerConnection, useServer } from "./server"
+import { syncAdoptedServerProjects, mergedProjectEntries } from "./server-projects"
 import { useServerHealth } from "@/utils/server-health"
 import { createServerSdkContext } from "./server-sdk"
 import { createServerSyncContext } from "./server-sync"
@@ -109,12 +110,16 @@ function createServerCtx(
   const sdk = createServerSdkContext(conn, scope)
   const sync = createServerSyncContext(sdk)
 
+  createEffect(() => {
+    syncAdoptedServerProjects({ projects, serverProjects: sync.projectList() })
+  })
+
   function enrich(project: { worktree: string; expanded: boolean }) {
     const [childStore] = sync.child(project.worktree, { bootstrap: false })
     const projectID = childStore.project
     const metadata = projectID
-      ? sync.data.project.find((x) => x.id === projectID)
-      : sync.data.project.find((x) => x.worktree === project.worktree)
+      ? sync.projectList().find((x) => x.id === projectID)
+      : sync.projectList().find((x) => x.worktree === project.worktree)
 
     // Preserve local icon override from per-workspace localStorage cache (childStore.icon).
     // Without this, different subdirectories of the same git repo would share the same
@@ -126,7 +131,9 @@ function createServerCtx(
     return base
   }
 
-  const projectsList = createMemo(() => projects.list().map(enrich))
+  const projectsList = createMemo(() =>
+    mergedProjectEntries({ projects, serverProjects: sync.projectList() }).map(enrich),
+  )
 
   const isLocal =
     (conn?.type === "sidecar" && conn.variant === "base") || (conn?.type === "http" && isLocalHost(conn.http.url))

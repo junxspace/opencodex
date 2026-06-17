@@ -167,8 +167,101 @@ export const {
       })
     }
 
+    function applyPendingQuestions(questions: QuestionRequest[], sessionID?: string) {
+      const valid = questions.filter((item) => item.id && item.sessionID)
+      const scoped = sessionID ? valid.filter((item) => item.sessionID === sessionID) : valid
+      const grouped = scoped.reduce<Record<string, QuestionRequest[]>>((acc, item) => {
+        const list = acc[item.sessionID] ?? []
+        list.push(item)
+        acc[item.sessionID] = list
+        return acc
+      }, {})
+
+      batch(() => {
+        if (sessionID) {
+          const next = grouped[sessionID] ?? []
+          setStore(
+            "question",
+            sessionID,
+            reconcile(
+              next.toSorted((a, b) => a.id.localeCompare(b.id)),
+              { key: "id" },
+            ),
+          )
+          return
+        }
+        for (const id of Object.keys(store.question)) {
+          if (grouped[id]) continue
+          setStore("question", id, [])
+        }
+        for (const [id, items] of Object.entries(grouped)) {
+          setStore(
+            "question",
+            id,
+            reconcile(
+              items.toSorted((a, b) => a.id.localeCompare(b.id)),
+              { key: "id" },
+            ),
+          )
+        }
+      })
+    }
+
+    function applyPendingPermissions(permissions: PermissionRequest[], sessionID?: string) {
+      const valid = permissions.filter((item) => item.id && item.sessionID)
+      const scoped = sessionID ? valid.filter((item) => item.sessionID === sessionID) : valid
+      const grouped = scoped.reduce<Record<string, PermissionRequest[]>>((acc, item) => {
+        const list = acc[item.sessionID] ?? []
+        list.push(item)
+        acc[item.sessionID] = list
+        return acc
+      }, {})
+
+      batch(() => {
+        if (sessionID) {
+          const next = grouped[sessionID] ?? []
+          setStore(
+            "permission",
+            sessionID,
+            reconcile(
+              next.toSorted((a, b) => a.id.localeCompare(b.id)),
+              { key: "id" },
+            ),
+          )
+          return
+        }
+        for (const id of Object.keys(store.permission)) {
+          if (grouped[id]) continue
+          setStore("permission", id, [])
+        }
+        for (const [id, items] of Object.entries(grouped)) {
+          setStore(
+            "permission",
+            id,
+            reconcile(
+              items.toSorted((a, b) => a.id.localeCompare(b.id)),
+              { key: "id" },
+            ),
+          )
+        }
+      })
+    }
+
+    function refreshPendingPrompts(sessionID?: string) {
+      return Promise.all([
+        sdk.client.question.list().then((x) => x.data ?? []),
+        sdk.client.permission.list().then((x) => x.data ?? []),
+      ]).then(([questions, permissions]) => {
+        applyPendingQuestions(questions, sessionID)
+        applyPendingPermissions(permissions, sessionID)
+      })
+    }
+
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
+        case "server.connected":
+          void refreshPendingPrompts()
+          break
         case "server.instance.disposed":
           void bootstrap()
           break
@@ -364,23 +457,29 @@ export const {
         }
         case "message.part.updated": {
           touchPart(event.properties.part.sessionID, event.properties.part.id)
-          const parts = store.part[event.properties.part.messageID]
+          const part = event.properties.part
+          const parts = store.part[part.messageID]
           if (!parts) {
-            setStore("part", event.properties.part.messageID, [event.properties.part])
-            break
+            setStore("part", part.messageID, [part])
           }
-          const result = search(parts, event.properties.part.id, (p) => p.id)
-          if (result.found) {
-            setStore("part", event.properties.part.messageID, result.index, reconcile(event.properties.part))
-            break
+          if (parts) {
+            const result = search(parts, part.id, (p) => p.id)
+            if (result.found) {
+              setStore("part", part.messageID, result.index, reconcile(part))
+            }
+            if (!result.found) {
+              setStore(
+                "part",
+                part.messageID,
+                produce((draft) => {
+                  draft.splice(result.index, 0, part)
+                }),
+              )
+            }
           }
-          setStore(
-            "part",
-            event.properties.part.messageID,
-            produce((draft) => {
-              draft.splice(result.index, 0, event.properties.part)
-            }),
-          )
+          if (part.type === "tool" && part.tool === "question") {
+            void refreshPendingPrompts(part.sessionID)
+          }
           break
         }
 
@@ -482,12 +581,12 @@ export const {
             if (sessions !== undefined) setStore("session", reconcile(sessions))
           })
         })
-        .then(() => {
+        .then(async () => {
           if (store.status !== "complete") {
             setStore("status", "partial")
             StartupTrace.mark("sync.bootstrap.partial")
           }
-          void Promise.all([
+          await Promise.all([
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
             providerListPromise.then((x) => setStore("provider_next", reconcile(x.data!))),
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
@@ -503,11 +602,11 @@ export const {
             }),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
+            refreshPendingPrompts(),
             project.workspace.sync(),
-          ]).then(() => {
-            setStore("status", "complete")
-            StartupTrace.mark("sync.bootstrap.complete")
-          })
+          ])
+          setStore("status", "complete")
+          StartupTrace.mark("sync.bootstrap.complete")
         })
         .catch(async (e) => {
           console.error("tui bootstrap failed", {
@@ -629,6 +728,7 @@ export const {
               }),
             )
             fullSyncedSessions.add(sessionID)
+            await refreshPendingPrompts(sessionID)
           })().finally(() => {
             syncingSessions.delete(sessionID)
             hydratingSessions.delete(sessionID)
@@ -652,6 +752,7 @@ export const {
         },
       },
       bootstrap,
+      refreshPending: refreshPendingPrompts,
     }
     return result
   },

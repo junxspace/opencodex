@@ -5,14 +5,19 @@ import type { TextareaRenderable } from "@opentui/core"
 import { listSelectionBackground, selectedForeground, tint, useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
+import { useSync } from "../../context/sync"
 import { SplitBorder } from "../../ui/border"
 import { useTuiConfig } from "../../config"
 import { useBindings, useOpencodeModeStack } from "../../keymap"
+import { useToast } from "../../ui/toast"
+import { errorMessage } from "../../util/error"
 
 const QUESTION_MODE = "question"
 
 export function QuestionPrompt(props: { request: QuestionRequest; directory?: string }) {
   const sdk = useSDK()
+  const sync = useSync()
+  const toast = useToast()
   const { theme } = useTheme()
   const selectionBg = () => listSelectionBackground(theme)
   const renderer = useRenderer()
@@ -48,18 +53,31 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
 
   function submit() {
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    void sdk.client.question.reply({
-      requestID: props.request.id,
-      directory: props.directory,
-      answers,
-    })
+    void respond("reply", answers)
   }
 
   function reject() {
-    void sdk.client.question.reject({
-      requestID: props.request.id,
-      directory: props.directory,
+    void respond("reject")
+  }
+
+  async function respond(action: "reply" | "reject", answers?: QuestionAnswer[]) {
+    const result =
+      action === "reply"
+        ? await sdk.client.question.reply({
+            requestID: props.request.id,
+            directory: props.directory,
+            answers: answers ?? [],
+          })
+        : await sdk.client.question.reject({
+            requestID: props.request.id,
+            directory: props.directory,
+          })
+    if (!result.error) return
+    toast.show({
+      message: errorMessage(result.error),
+      variant: "error",
     })
+    await sync.refreshPending(props.request.sessionID)
   }
 
   function pick(answer: string, custom: boolean = false) {
@@ -72,11 +90,7 @@ export function QuestionPrompt(props: { request: QuestionRequest; directory?: st
       setStore("custom", inputs)
     }
     if (single()) {
-      void sdk.client.question.reply({
-        requestID: props.request.id,
-        directory: props.directory,
-        answers: [[answer]],
-      })
+      void respond("reply", [[answer]])
       return
     }
     setStore("tab", store.tab + 1)

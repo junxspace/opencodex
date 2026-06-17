@@ -1,36 +1,13 @@
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { withNetworkOptions, resolveNetworkOptions, getLanIPv4Addresses } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import open from "open"
-import { networkInterfaces } from "os"
-
-function getNetworkIPs() {
-  const nets = networkInterfaces()
-  const results: string[] = []
-
-  for (const name of Object.keys(nets)) {
-    const net = nets[name]
-    if (!net) continue
-
-    for (const netInfo of net) {
-      // Skip internal and non-IPv4 addresses
-      if (netInfo.internal || netInfo.family !== "IPv4") continue
-
-      // Skip Docker bridge networks (typically 172.x.x.x)
-      if (netInfo.address.startsWith("172.")) continue
-
-      results.push(netInfo.address)
-    }
-  }
-
-  return results
-}
 
 export const WebCommand = effectCmd({
   command: "web",
-  builder: (yargs) => withNetworkOptions(yargs),
+  builder: (yargs) => withNetworkOptions(yargs).default("hostname", "0.0.0.0"),
   describe: "start opencode server and open web interface",
   // Server loads instances per-request via x-opencode-directory header — no
   // ambient project InstanceContext needed at startup.
@@ -51,12 +28,11 @@ export const WebCommand = effectCmd({
       const localhostUrl = `http://localhost:${server.port}`
       UI.println(UI.Style.TEXT_INFO_BOLD + "  Local access:      ", UI.Style.TEXT_NORMAL, localhostUrl)
 
-      // Show network IPs for remote access
-      const networkIPs = getNetworkIPs()
-      if (networkIPs.length > 0) {
-        for (const ip of networkIPs) {
+      const lanIPs = getLanIPv4Addresses()
+      if (lanIPs.length > 0) {
+        for (const ip of lanIPs) {
           UI.println(
-            UI.Style.TEXT_INFO_BOLD + "  Network access:    ",
+            UI.Style.TEXT_INFO_BOLD + "  LAN access:        ",
             UI.Style.TEXT_NORMAL,
             `http://${ip}:${server.port}`,
           )

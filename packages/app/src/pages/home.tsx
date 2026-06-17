@@ -338,8 +338,8 @@ function HomeDesign() {
   }
 
   return (
-    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
-      <div class="mx-auto grid w-full h-full max-w-[1080px] gap-8 px-6 pb-16 lg:grid-cols-[280px_minmax(0,720px)]">
+    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-1 sm:m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
+      <div class="mx-auto grid w-full h-full max-w-[1080px] gap-6 px-4 pb-10 sm:gap-8 sm:px-6 sm:pb-16 lg:grid-cols-[280px_minmax(0,720px)]">
         <HomeProjectColumn
           projects={projects()}
           selected={state.selection}
@@ -365,7 +365,7 @@ function HomeDesign() {
         />
 
         <section
-          class="min-h-0 min-w-0 flex-1 flex flex-col pt-12"
+          class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 sm:pt-8 lg:pt-12"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
           <HomeSessionSearch
@@ -453,7 +453,7 @@ function HomeProjectColumn(props: {
   const dialog = useDialog()
   const controller = useServerManagementController({ navigateOnAdd: false })
   return (
-    <aside class="flex min-w-0 flex-col lg:pt-[52px] mt-14 gap-4" aria-label={props.language.t("home.projects")}>
+    <aside class="flex min-w-0 flex-col gap-4 mt-4 sm:mt-8 lg:mt-0 lg:pt-[52px]" aria-label={props.language.t("home.projects")}>
       <div class="flex h-7 min-w-0 items-center justify-between pl-1.5">
         <div class={HOME_SECTION_LABEL}>{props.language.t("home.projects")}</div>
         <Show when={global.servers.list().length === 1}>

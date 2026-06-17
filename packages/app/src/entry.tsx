@@ -154,6 +154,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 }
 
 if (root instanceof HTMLElement) {
+  document.documentElement.dataset.platform = "web"
   const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
   clearAuthToken()
   const server: ServerConnection.Http = {

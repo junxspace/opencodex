@@ -3,20 +3,24 @@ import { UI } from "@/cli/ui"
 import { errorMessage } from "@opencode-ai/tui/util/error"
 import { validateSession } from "../tui/validate-session"
 import { ServerAuth } from "@/server/auth"
+import { resolveThreadDirectory } from "./tui"
+
+const DEFAULT_ATTACH_SERVER_URL = process.env.OPENCODE_SERVER_URL ?? "http://127.0.0.1:4096"
 
 export const AttachCommand = cmd({
-  command: "attach <url>",
+  command: "attach [url]",
   describe: "attach to a running opencode server",
   builder: (yargs) =>
     yargs
       .positional("url", {
         type: "string",
-        describe: "http://localhost:4096",
-        demandOption: true,
+        describe: "opencode server URL",
+        default: DEFAULT_ATTACH_SERVER_URL,
       })
       .option("dir", {
         type: "string",
         description: "directory to run in",
+        defaultDescription: "current working directory",
       })
       .option("continue", {
         alias: ["c"],
@@ -50,14 +54,15 @@ export const AttachCommand = cmd({
       return
     }
 
+    const url = args.url ?? DEFAULT_ATTACH_SERVER_URL
     const directory = (() => {
-      if (!args.dir) return undefined
+      const target = args.dir ?? resolveThreadDirectory()
       try {
-        process.chdir(args.dir)
+        process.chdir(target)
         return process.cwd()
       } catch {
         // If the directory doesn't exist locally (remote attach), pass it through.
-        return args.dir
+        return target
       }
     })()
     const headers = ServerAuth.headers({ password: args.password, username: args.username })
@@ -65,7 +70,7 @@ export const AttachCommand = cmd({
 
     try {
       await validateSession({
-        url: args.url,
+        url,
         sessionID: args.session,
         directory,
         headers,
@@ -81,7 +86,7 @@ export const AttachCommand = cmd({
     const { createLegacyTuiPluginHost } = await import("@/plugin/tui/runtime")
     await Effect.runPromise(
       run({
-        url: args.url,
+        url,
         config,
         pluginHost: createLegacyTuiPluginHost(),
         args: {

@@ -35,6 +35,8 @@ import { displayName, getProjectAvatarSource, projectForSession } from "@/pages/
 import { useSessionTabAvatarState } from "@/pages/layout/project-avatar-state"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/components/titlebar-session-events"
+import { ColorSchemeToggle } from "@/components/color-scheme-toggle"
+import { useWebLayout } from "@/utils/web-layout"
 import { useGlobal } from "@/context/global"
 import { decode64 } from "@/utils/base64"
 import { ServerConnection, useServer } from "@/context/server"
@@ -90,6 +92,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const electronWindows = createMemo(() => windows() && !tauriApi())
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const web = createMemo(() => platform.platform === "web")
+  const webLayout = useWebLayout()
   const zoom = () => platform.webviewZoom?.() ?? 1
   const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
   const counterZoom = () => (windows() && titlebarZoom() < 1 ? 1 / titlebarZoom() : 1)
@@ -234,6 +237,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
         "h-10 bg-background-base overflow-hidden": !useV2Titlebar(),
       }}
       style={{
+        "--app-titlebar-height": useV2Titlebar() ? "2.25rem" : "2.5rem",
         "min-height": minHeight(),
         "padding-left": mac() ? `${84 / zoom()}px` : 0,
         width: electronWindows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
@@ -425,6 +429,17 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 <Show when={windows() || linux()}>
                   <WindowsAppMenu command={command} platform={platform} variant="v2" />
                 </Show>
+                <Show when={web() && webLayout.compact()}>
+                  <IconButtonV2
+                    variant="ghost-muted"
+                    size="large"
+                    class="!w-9 shrink-0 [app-region:no-drag]"
+                    icon={<IconV2 name="menu" />}
+                    onClick={layout.mobileSidebar.toggle}
+                    aria-label={language.t("sidebar.menu.toggle")}
+                    aria-expanded={layout.mobileSidebar.opened()}
+                  />
+                </Show>
                 <IconButtonV2
                   variant="ghost-muted"
                   size="large"
@@ -438,6 +453,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 <div
                   class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"
                   ref={tabScrollRef}
+                  onScroll={refreshTabsAreOverflowing}
                 >
                   <div class="flex min-w-0 flex-row items-center gap-1.5">
                     <For each={tabsStore}>
@@ -527,7 +543,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                     type="button"
                     variant="ghost-muted"
                     size="large"
-                    class="shrink-0"
+                    class="shrink-0 max-lg:hidden [app-region:no-drag]"
                     icon={<IconV2 name="plus" />}
                     as="a"
                     href={newSessionHref()}
@@ -690,6 +706,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               onMouseDown={drag}
             >
               <div id="opencode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
+              <ColorSchemeToggle />
               <Show when={windows()}>
                 {!tauriApi() && <div class="shrink-0" style={{ width: windowsControlsWidth() }} />}
                 <div data-tauri-decorum-tb class="flex flex-row" />
@@ -717,7 +734,8 @@ type TitlebarV2RightState = {
 
 function TitlebarV2Right(props: { state: TitlebarV2RightState }) {
   return (
-    <div class="relative z-20 flex shrink-0 items-center justify-end gap-0 overflow-visible">
+    <div class="relative z-20 flex shrink-0 items-center justify-end gap-2 overflow-visible">
+      <ColorSchemeToggle />
       <Show when={props.state.update.visible}>
         <TitlebarUpdateIconButton state={props.state.update} />
       </Show>

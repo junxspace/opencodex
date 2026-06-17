@@ -1,13 +1,13 @@
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { withNetworkOptions, resolveNetworkOptions, getLanIPv4Addresses } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import * as Log from "@opencode-ai/core/util/log"
 import { InstallationLocal } from "@opencode-ai/core/installation/version"
 
 export const ServeCommand = effectCmd({
   command: "serve",
-  builder: (yargs) => withNetworkOptions(yargs),
+  builder: (yargs) => withNetworkOptions(yargs).default("hostname", "0.0.0.0"),
   describe: "starts a headless opencode server",
   // Server loads instances per-request via x-opencode-directory header — no
   // need for an ambient project InstanceContext at startup.
@@ -19,7 +19,14 @@ export const ServeCommand = effectCmd({
     }
     const opts = yield* resolveNetworkOptions(args)
     const server = yield* Effect.promise(() => Server.listen(opts))
-    console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
+    if (opts.hostname === "0.0.0.0") {
+      console.log(`opencode server listening on http://localhost:${server.port}`)
+      for (const ip of getLanIPv4Addresses()) {
+        console.log(`opencode server LAN access: http://${ip}:${server.port}`)
+      }
+    } else {
+      console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
+    }
 
     const level = (() => {
       const fromEnv = process.env.OPENCODE_LOG_LEVEL?.toUpperCase()

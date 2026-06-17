@@ -52,7 +52,7 @@ export const entries: CommandEntry[] = [
     load: loadCmd(() => import("./cmd/tui").then((mod) => mod.TuiThreadCommand)),
   },
   {
-    command: "attach <url>",
+    command: "attach [url]",
     describe: "attach to a running opencode server",
     load: loadCmd(() => import("./cmd/attach").then((mod) => mod.AttachCommand)),
   },

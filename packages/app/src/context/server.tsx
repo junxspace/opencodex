@@ -3,10 +3,15 @@ import { type Accessor, batch, createMemo } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import { ServerScope } from "@/utils/server-scope"
+import { pathKey } from "@/utils/path-key"
 
 type StoredProject = { worktree: string; expanded: boolean }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
-type ServerProjectState = { projects: Record<string, StoredProject[]>; lastProject: Record<string, string> }
+type ServerProjectState = {
+  projects: Record<string, StoredProject[]>
+  lastProject: Record<string, string>
+  dismissed: Record<string, string[]>
+}
 const HEALTH_POLL_INTERVAL_MS = 10_000
 
 export function normalizeServerUrl(input: string) {
@@ -72,17 +77,34 @@ export function createServerProjects<T extends ServerProjectState>(input: {
 }) {
   const setStore = input.setStore as unknown as SetStoreFunction<ServerProjectState>
   const current = () => input.store.projects[input.scope()] ?? []
+  const dismissed = () => input.store.dismissed?.[input.scope()] ?? []
   return {
     list: current,
+    dismissed,
     open(directory: string) {
       const scope = input.scope()
+      const key = pathKey(directory)
+      const nextDismissed = dismissed().filter((item) => pathKey(item) !== key)
+      if (nextDismissed.length !== dismissed().length) setStore("dismissed", scope, nextDismissed)
       if (current().some((project) => project.worktree === directory)) return
       setStore("projects", scope, [{ worktree: directory, expanded: true }, ...current()])
     },
-    close(directory: string) {
+    remove(directory: string) {
       setStore(
         "projects",
         input.scope(),
+        current().filter((project) => project.worktree !== directory),
+      )
+    },
+    close(directory: string) {
+      const scope = input.scope()
+      const key = pathKey(directory)
+      if (!dismissed().some((item) => pathKey(item) === key)) {
+        setStore("dismissed", scope, [...dismissed(), directory])
+      }
+      setStore(
+        "projects",
+        scope,
         current().filter((project) => project.worktree !== directory),
       )
     },
@@ -235,6 +257,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         list: [] as StoredServer[],
         projects: {} as Record<string, StoredProject[]>,
         lastProject: {} as Record<string, string>,
+        dismissed: {} as Record<string, string[]>,
       }),
     )
 

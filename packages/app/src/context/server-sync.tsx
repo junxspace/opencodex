@@ -1,7 +1,7 @@
 import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, Todo } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { batch, getOwner, onCleanup, onMount, untrack } from "solid-js"
+import { batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import type { InitError } from "../pages/error"
@@ -109,8 +109,13 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
 
   const queryOptionsApi = makeQueryOptionsApi(serverSDK.scope, () => serverSDK.client, sdkFor)
 
-  const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
-    queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
+  const [configQuery, providerQuery, pathQuery, projectsQuery] = useQueries(() => ({
+    queries: [
+      queryOptionsApi.globalConfig(),
+      queryOptionsApi.providers(null),
+      queryOptionsApi.path(null),
+      queryOptionsApi.projects(),
+    ],
   }))
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
@@ -179,6 +184,10 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
       return bootedAt
     },
   }))
+
+  const projectList = createMemo(() =>
+    globalStore.project.length > 0 ? globalStore.project : (projectsQuery.data ?? []),
+  )
 
   const set = ((...input: unknown[]) => {
     if (input[0] === "project" && (Array.isArray(input[1]) || typeof input[1] === "function")) {
@@ -465,6 +474,7 @@ export function createServerSyncContextInner(_serverSDK?: ServerSDK) {
 
   return {
     data: globalStore,
+    projectList,
     set,
     get ready() {
       return globalStore.ready

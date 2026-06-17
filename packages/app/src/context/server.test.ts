@@ -99,7 +99,7 @@ describe("createServerProjects", () => {
   test("keeps active and explicit server buckets in one reactive store", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)
-      const [store, setStore] = createStore({ projects: {}, lastProject: {} })
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, dismissed: {} })
       const active = createServerProjects({ scope, store, setStore })
       const remote = createServerProjects({ scope: () => "https://debian.example" as ServerScope, store, setStore })
 
@@ -112,6 +112,7 @@ describe("createServerProjects", () => {
 
       adopted.close("/repo")
       expect(remote.list()).toEqual([])
+      expect(adopted.dismissed()).toEqual(["/repo"])
       dispose()
     })
   })

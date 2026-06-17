@@ -187,6 +187,78 @@ MCP 服务器可配置 `lazy: true`，启动时不连接，状态为 `idle`，�
 
 MCP 状态新增 `idle` 指示，区分已配置未连接与已连接服务器。
 
+### Agnes AI 多媒体生成工具
+
+配置 Agnes AI MCP server 后，可通过 TUI 命令快捷调用图片和视频生成能力。
+
+**MCP 配置：**
+
+```json
+{
+  "mcp": {
+    "agnes-ai": {
+      "type": "local",
+      "command": ["node", "/Users/junx/.config/opencode/plugins/agnes-ai-mcp/dist/index.js"],
+      "env": {
+        "AGNES_API_KEY": "{env:AGNES_API_KEY}"
+      },
+      "lazy": true
+    }
+  }
+}
+```
+
+需要提供环境变量 `AGNES_API_KEY`。MCP server 提供以下工具：
+
+| 工具 | 功能 | 参数 |
+|------|------|------|
+| `agnes_generate_image` | 生成图片 | `prompt`（必填）、`model`（默认 agnes-image-2.1-flash）、`size`（默认 1024x1024）、`n`（默认 1） |
+| `agnes_generate_video` | 生成视频 | `prompt`（必填）、`model`（默认 agnes-video-v2.0）、`duration`（默认 5 秒）、`size`（默认 1280x720） |
+| `agnes_list_models` | 列出可用模型 | 无 |
+
+**TUI 快捷命令：**
+
+在 opencode TUI 中使用 `/image` 或 `/video` 命令：
+
+```
+# 生成图片
+/image 一只猫坐在窗台上
+
+# 生成视频
+/video 海浪拍打海岸
+```
+
+**模型注册：**
+
+在 `provider` 中注册模型元信息，配置 `modalities` 标识多模态能力：
+
+```json
+{
+  "provider": {
+    "agnes-ai": {
+      "models": {
+        "agnes-image-2.1-flash": {
+          "name": "agnes-image-2.1-flash",
+          "modalities": {
+            "input": ["text"],
+            "output": ["image"]
+          }
+        },
+        "agnes-video-v2.0": {
+          "name": "agnes-video-v2.0",
+          "modalities": {
+            "input": ["text"],
+            "output": ["video"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+> **注意：** agnes-image-2.1-flash 和 agnes-video-v2.0 是生成型模型（图片/视频），不是对话模型。推荐通过 MCP tools 调用，而不是直接设为 `model`。
+
 ---
 
 ## 6. Skills 目录模式

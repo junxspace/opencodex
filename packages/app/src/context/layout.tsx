@@ -6,6 +6,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { useServerSync } from "./server-sync"
 import { useServerSDK } from "./server-sdk"
 import { ServerConnection, useServer } from "./server"
+import { syncAdoptedServerProjects, mergedProjectEntries } from "./server-projects"
 import { usePlatform } from "./platform"
 import { Project } from "@opencode-ai/sdk/v2"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
@@ -412,8 +413,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       const [childStore] = serverSync.child(project.worktree, { bootstrap: false })
       const projectID = childStore.project
       const metadata = projectID
-        ? serverSync.data.project.find((x) => x.id === projectID)
-        : serverSync.data.project.find((x) => x.worktree === project.worktree)
+        ? serverSync.projectList().find((x) => x.id === projectID)
+        : serverSync.projectList().find((x) => x.worktree === project.worktree)
 
       // Preserve local icon override from per-workspace localStorage cache (childStore.icon).
       // Without this, different subdirectories of the same git repo would share the same
@@ -427,7 +428,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
     const roots = createMemo(() => {
       const map = new Map<string, string>()
-      for (const project of serverSync.data.project) {
+      for (const project of serverSync.projectList()) {
         const sandboxes = project.sandboxes ?? []
         for (const sandbox of sandboxes) {
           map.set(sandbox, project.worktree)
@@ -459,6 +460,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     }
 
     createEffect(() => {
+      syncAdoptedServerProjects({ projects: server.projects, serverProjects: serverSync.projectList() })
+    })
+
+    createEffect(() => {
       const projects = server.projects.list()
       const seen = new Set(projects.map((project) => project.worktree))
 
@@ -467,7 +472,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           const root = rootFor(project.worktree)
           if (root === project.worktree) continue
 
-          server.projects.close(project.worktree)
+          server.projects.remove(project.worktree)
 
           if (!seen.has(root)) {
             server.projects.open(root)
@@ -479,7 +484,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       })
     })
 
-    const enriched = createMemo(() => server.projects.list().map(enrich))
+    const enriched = createMemo(() =>
+      mergedProjectEntries({ projects: server.projects, serverProjects: serverSync.projectList() }).map(enrich),
+    )
     const list = createMemo(() => {
       const projects = enriched()
       return projects.map((project) => {

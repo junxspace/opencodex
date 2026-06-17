@@ -64,6 +64,7 @@ import { useCommand, type CommandOption } from "@/context/command"
 import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
 import { DebugBar } from "@/components/debug-bar"
 import { HelpButton } from "@/components/help-button"
+import { WebMobileNav } from "@/components/web-mobile-nav"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { ServerConnection, useServer } from "@/context/server"
@@ -132,6 +133,11 @@ export default function Layout(props: ParentProps) {
   const theme = useTheme()
   const language = useLanguage()
   const newDesign = createMemo(() => settings.general.newLayoutDesigns())
+  createEffect(() => {
+    if (platform.platform !== "web") return
+    location.pathname
+    layout.mobileSidebar.hide()
+  })
   createEffect(() => setV2Toast(newDesign()))
   const initialDirectory = decode64(params.dir)
   const location = useLocation()
@@ -2359,6 +2365,11 @@ export default function Layout(props: ParentProps) {
         <div class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
           {autoselecting() ?? ""}
           <Titlebar update={titlebarUpdate} />
+          <Show when={platform.platform === "web"}>
+            <WebMobileNav opened={layout.mobileSidebar.opened} onClose={layout.mobileSidebar.hide}>
+              {sidebarContent(true)}
+            </WebMobileNav>
+          </Show>
           <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
             <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
               {props.children}
@@ -2406,7 +2417,7 @@ export default function Layout(props: ParentProps) {
 
               <Show when={layout.sidebar.opened()}>
                 <div
-                  class="hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"
+                  class="web-desktop-sidebar-resize hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"
                   style={{ left: `${side()}px` }}
                   onPointerDown={() => setState("sizing", true)}
                 >
@@ -2426,17 +2437,18 @@ export default function Layout(props: ParentProps) {
               </Show>
 
               <div
-                class="hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
+                class="web-desktop-sidebar-border hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
                 style={{ left: "calc(4rem + 12px)" }}
               />
 
-              <div class="xl:hidden">
+              <div class="xl:hidden web-legacy-mobile-nav">
                 <div
                   classList={{
-                    "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
+                    "fixed inset-x-0 bottom-0 z-40 transition-opacity duration-200": true,
                     "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),
                     "opacity-0 pointer-events-none": !layout.mobileSidebar.opened(),
                   }}
+                  style={{ top: "var(--app-titlebar-height, 2.5rem)" }}
                   onClick={(e) => {
                     if (e.target === e.currentTarget) layout.mobileSidebar.hide()
                   }}
@@ -2445,10 +2457,11 @@ export default function Layout(props: ParentProps) {
                   aria-label={language.t("sidebar.nav.projectsAndSessions")}
                   data-component="sidebar-nav-mobile"
                   classList={{
-                    "@container fixed top-10 bottom-0 left-0 z-50 w-full max-w-[400px] overflow-hidden border-r border-border-weaker-base bg-background-base transition-transform duration-200 ease-out": true,
+                    "@container fixed bottom-0 left-0 z-50 w-full max-w-[min(400px,100vw)] overflow-hidden border-r border-border-weaker-base bg-background-base transition-transform duration-200 ease-out": true,
                     "translate-x-0": layout.mobileSidebar.opened(),
                     "-translate-x-full": !layout.mobileSidebar.opened(),
                   }}
+                  style={{ top: "var(--app-titlebar-height, 2.5rem)" }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   {sidebarContent(true)}
@@ -2457,7 +2470,7 @@ export default function Layout(props: ParentProps) {
 
               <div
                 classList={{
-                  "absolute inset-0": true,
+                  "web-legacy-main absolute inset-0": true,
                   "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
                   "z-20": true,
                   "transition-[left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left] motion-reduce:transition-none":

@@ -2,6 +2,7 @@ import type { Argv, InferredOptionTypes } from "yargs"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import type { Config } from "@/config/config"
 import { Effect } from "effect"
+import { networkInterfaces } from "os"
 
 const options = {
   port: {
@@ -61,4 +62,35 @@ export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: Con
   const cors = [...configCors, ...argsCors]
 
   return { hostname, port, mdns, mdnsDomain, cors }
+}
+
+function isPrivateIPv4(address: string) {
+  const parts = address.split(".").map(Number)
+  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) return false
+
+  const [a, b] = parts
+  if (a === 10) return true
+  if (a === 192 && b === 168) return true
+  if (a === 172 && b !== undefined && b >= 16 && b <= 31) return true
+  return false
+}
+
+export function getLanIPv4Addresses() {
+  const nets = networkInterfaces()
+  const results: string[] = []
+
+  for (const name of Object.keys(nets)) {
+    const net = nets[name]
+    if (!net) continue
+
+    for (const netInfo of net) {
+      if (netInfo.internal || netInfo.family !== "IPv4") continue
+      if (!isPrivateIPv4(netInfo.address)) continue
+      if (results.includes(netInfo.address)) continue
+
+      results.push(netInfo.address)
+    }
+  }
+
+  return results
 }
