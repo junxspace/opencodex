@@ -419,13 +419,13 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
             return (
               <div
-                class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1.5 pr-3 pt-2"
+                class="h-full flex-1 overflow-hidden flex flex-row items-center gap-1 pr-2 pt-1.5 sm:gap-1.5 sm:pr-3 sm:pt-2"
                 classList={{
-                  "pl-2": mac(),
-                  "pl-4": !mac(),
+                  "pl-1.5": mac(),
+                  "pl-2": !mac(),
                 }}
               >
-                <ChannelIndicator />
+                <ChannelIndicator compact={web() && webLayout.compact()} />
                 <Show when={windows() || linux()}>
                   <WindowsAppMenu command={command} platform={platform} variant="v2" />
                 </Show>
@@ -433,7 +433,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   <IconButtonV2
                     variant="ghost-muted"
                     size="large"
-                    class="!w-9 shrink-0 [app-region:no-drag]"
+                    class="!w-8 shrink-0 [app-region:no-drag] sm:!w-9"
                     icon={<IconV2 name="menu" />}
                     onClick={layout.mobileSidebar.toggle}
                     aria-label={language.t("sidebar.menu.toggle")}
@@ -445,7 +445,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   size="large"
                   as="a"
                   href="/"
-                  class="!w-9 shrink-0"
+                  class="!w-8 shrink-0 sm:!w-9"
                   icon={<IconV2 name="grid-plus" />}
                   state={!!homeMatch() ? "pressed" : undefined}
                 />
@@ -986,11 +986,18 @@ function NewSessionTabItem(props: { ref?: HTMLDivElement; href: string; title: s
   )
 }
 
-function ChannelIndicator() {
+function ChannelIndicator(props?: { compact?: boolean }) {
   return (
     <>
       {["beta", "dev"].includes(import.meta.env.VITE_OPENCODE_CHANNEL) && (
-        <div class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono">
+        <div
+          data-component="titlebar-channel"
+          classList={{
+            "bg-icon-interactive-base text-[#FFF] font-medium rounded-sm uppercase font-mono shrink-0": true,
+            "px-1.5 text-[10px]": props?.compact,
+            "px-2": !props?.compact,
+          }}
+        >
           {import.meta.env.VITE_OPENCODE_CHANNEL.toUpperCase()}
         </div>
       )}

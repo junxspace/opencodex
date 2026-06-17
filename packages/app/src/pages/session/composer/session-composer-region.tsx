@@ -152,7 +152,7 @@ export function SessionComposerRegion(props: {
       <div
         classList={{
           "w-full pointer-events-auto": true,
-          "px-3": props.placement !== "inline",
+          "px-2 sm:px-3": props.placement !== "inline",
           [NEW_SESSION_CONTENT_WIDTH]: props.placement === "inline",
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
         }}

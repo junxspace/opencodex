@@ -11,7 +11,7 @@ export function HelpButton() {
 
   return (
     <Show when={!state.dismissed}>
-      <div class="fixed bottom-4 right-4 z-50">
+      <div class="web-help-button fixed bottom-4 right-4 z-50">
         <Popover
           open={shown()}
           onOpenChange={setShown}

@@ -338,8 +338,8 @@ function HomeDesign() {
   }
 
   return (
-    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-1 sm:m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
-      <div class="mx-auto grid w-full h-full max-w-[1080px] gap-6 px-4 pb-10 sm:gap-8 sm:px-6 sm:pb-16 lg:grid-cols-[280px_minmax(0,720px)]">
+    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-0.5 sm:m-1 lg:m-2 min-h-0 lg:overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
+      <div class="mx-auto grid w-full h-full max-w-[1080px] gap-4 px-3 pb-6 sm:gap-6 sm:px-4 sm:pb-10 lg:gap-8 lg:px-6 lg:pb-16 lg:grid-cols-[280px_minmax(0,720px)]">
         <HomeProjectColumn
           projects={projects()}
           selected={state.selection}
@@ -365,7 +365,7 @@ function HomeDesign() {
         />
 
         <section
-          class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 sm:pt-8 lg:pt-12"
+          class="min-h-0 min-w-0 flex-1 flex flex-col pt-3 sm:pt-6 lg:pt-12"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
           <HomeSessionSearch
@@ -453,7 +453,10 @@ function HomeProjectColumn(props: {
   const dialog = useDialog()
   const controller = useServerManagementController({ navigateOnAdd: false })
   return (
-    <aside class="flex min-w-0 flex-col gap-4 mt-4 sm:mt-8 lg:mt-0 lg:pt-[52px]" aria-label={props.language.t("home.projects")}>
+    <aside
+      class="hidden min-w-0 flex-col gap-4 lg:mt-0 lg:flex lg:pt-[52px]"
+      aria-label={props.language.t("home.projects")}
+    >
       <div class="flex h-7 min-w-0 items-center justify-between pl-1.5">
         <div class={HOME_SECTION_LABEL}>{props.language.t("home.projects")}</div>
         <Show when={global.servers.list().length === 1}>
@@ -1000,7 +1003,7 @@ function HomeSessionSearchResultRow(props: {
 function HomeSessionGroupHeader(props: { title: string; onNewSession?: () => void }) {
   const language = useLanguage()
   return (
-    <div class="flex h-7 min-w-0 items-center justify-between pl-4 pr-2">
+    <div class="flex h-7 min-w-0 items-center justify-between pl-3 pr-2 sm:pl-4">
       <div class={HOME_SECTION_LABEL}>{props.title}</div>
       <Show when={props.onNewSession}>
         {(onNewSession) => (
@@ -1032,7 +1035,7 @@ function HomeSessionRow(props: {
     <button
       type="button"
       data-component="home-session-row"
-      class={`${HOME_ROW} h-10 gap-2 px-6 py-3 pl-4`}
+      class={`${HOME_ROW} h-10 gap-2 px-3 py-3 sm:px-4`}
       onClick={() => props.openSession(props.record.session)}
     >
       <HomeSessionLeading
@@ -1047,7 +1050,7 @@ function HomeSessionRow(props: {
         {title()}
       </span>
       <Show when={props.record.projectName}>
-        <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440]">
+        <span class="hidden min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] sm:inline">
           {props.record.projectName}
         </span>
       </Show>

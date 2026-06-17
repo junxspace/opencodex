@@ -26,7 +26,7 @@ export function WebMobileNav(props: {
         aria-label={language.t("sidebar.nav.projectsAndSessions")}
         data-component="web-mobile-nav-panel"
         classList={{
-          "@container fixed bottom-0 left-0 z-50 flex h-auto w-full max-w-[min(400px,100vw)] flex-col overflow-hidden border-r border-v2-border-border-muted bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] transition-transform duration-200 ease-out": true,
+          "@container fixed bottom-0 left-0 z-50 flex h-auto w-full max-w-[min(400px,100vw)] flex-col overflow-hidden border-r border-v2-border-border-muted bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] transition-transform duration-200 ease-out pb-[env(safe-area-inset-bottom,0px)]": true,
           "translate-x-0": props.opened(),
           "-translate-x-full": !props.opened(),
         }}

@@ -282,6 +282,42 @@
       left: 0 !important;
       --main-left: 0px !important;
     }
+
+    [data-platform="web"] [data-component="session-prompt-dock"] {
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+    }
+
+    [data-platform="web"] [data-component="web-mobile-nav-panel"] {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    [data-platform="web"] [data-component="debug-bar"] {
+      display: none;
+    }
+
+    [data-platform="web"] .web-help-button {
+      bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+      right: max(1rem, env(safe-area-inset-right, 0px));
+    }
+
+    [data-platform="web"] [data-component="session-mobile-tabs"] {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      flex-shrink: 0;
+      background: var(--v2-background-bg-base);
+    }
+
+    [data-platform="web"] input,
+    [data-platform="web"] textarea,
+    [data-platform="web"] [contenteditable] {
+      font-size: max(16px, 1em);
+    }
+
+    [data-platform="web"] [data-component="titlebar-channel"] {
+      padding-inline: 0.375rem;
+      font-size: 10px;
+    }
   }
 
   @media (min-width: 1024px) {
