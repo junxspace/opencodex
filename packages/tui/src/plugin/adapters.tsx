@@ -16,6 +16,7 @@ import { Prompt } from "../component/prompt"
 import type { useToast } from "../ui/toast"
 import * as Keymap from "../keymap"
 import { createCommandShim } from "./command-shim"
+import { turnDiffs } from "../util/turn-diffs"
 import type { PluginRoutes } from "./api"
 export type { RouteMap } from "./api"
 export { createPluginRoutes, createTuiApi } from "./api"
@@ -123,9 +124,10 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
         return sync.session.get(sessionID)
       },
       diff(sessionID) {
-        return (sync.data.session_diff[sessionID] ?? []).flatMap((item) =>
-          item.file === undefined ? [] : [{ ...item, file: item.file }],
-        )
+        return turnDiffs({
+          messages: sync.data.message[sessionID],
+          revertMessageID: sync.session.get(sessionID)?.revert?.messageID,
+        })
       },
       todo(sessionID) {
         return sync.data.todo[sessionID] ?? []
