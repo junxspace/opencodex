@@ -11,6 +11,9 @@ export const Info = Schema.Union([
     type: Schema.Literal("idle"),
   }),
   Schema.Struct({
+    type: Schema.Literal("stale"),
+  }),
+  Schema.Struct({
     type: Schema.Literal("retry"),
     attempt: NonNegativeInt,
     message: Schema.String,

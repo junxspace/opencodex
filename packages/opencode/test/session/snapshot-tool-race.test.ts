@@ -50,6 +50,7 @@ import { Todo } from "../../src/session/todo"
 import { SessionCompaction } from "../../src/session/compaction"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
+import { SessionReconcile } from "../../src/session/reconcile"
 import { SessionRunState } from "../../src/session/run-state"
 import { SessionStatus } from "../../src/session/status"
 import { Snapshot } from "../../src/snapshot"
@@ -105,7 +106,12 @@ const lsp = Layer.succeed(
 )
 
 const status = SessionStatus.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer))
-const run = SessionRunState.layer.pipe(Layer.provide(status))
+const reconcile = SessionReconcile.layer.pipe(Layer.provide(Session.defaultLayer), Layer.provide(status))
+const run = SessionRunState.layer.pipe(
+  Layer.provide(BackgroundJob.defaultLayer),
+  Layer.provide(reconcile),
+  Layer.provide(status),
+)
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
 function makeHttp() {

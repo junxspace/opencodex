@@ -27,7 +27,8 @@ describe("bootstrapDirectory", () => {
       sessionTotal: 0,
       session_status: {},
       session_working(id: string) {
-        return this.session_status[id]?.type !== "idle"
+        const type = this.session_status[id]?.type
+        return type === "busy" || type === "retry"
       },
       session_diff: {},
       todo: {},

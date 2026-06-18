@@ -5,7 +5,6 @@ export type ClientOptions = {
 }
 
 export type Event =
-  | EventModelsDevRefreshed
   | EventCredentialAdded
   | EventCredentialRemoved
   | EventCredentialSwitched
@@ -52,12 +51,12 @@ export type Event =
   | EventMessagePartDelta
   | EventSessionDiff
   | EventSessionError
-  | EventInstallationUpdated
-  | EventInstallationUpdateAvailable
-  | EventFileEdited
-  | EventConnectorUpdated
+  | EventModelsDevRefreshed
+  | EventPermissionAsked
+  | EventPermissionReplied
   | EventPermissionV2Asked
   | EventPermissionV2Replied
+  | EventConnectorUpdated
   | EventReferenceUpdated
   | EventFileWatcherUpdated
   | EventPtyCreated
@@ -68,9 +67,6 @@ export type Event =
   | EventQuestionV2Replied
   | EventQuestionV2Rejected
   | EventTodoUpdated
-  | EventLspUpdated
-  | EventPermissionAsked
-  | EventPermissionReplied
   | EventTuiPromptAppend2
   | EventTuiCommandExecute2
   | EventTuiToastShow2
@@ -78,6 +74,9 @@ export type Event =
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventCommandExecuted
+  | EventLspUpdated
+  | EventInstallationUpdated
+  | EventInstallationUpdateAvailable
   | EventProjectDirectoriesUpdated
   | EventProjectUpdated
   | EventVcsBranchUpdated
@@ -86,14 +85,15 @@ export type Event =
   | EventQuestionRejected
   | EventSessionStatus
   | EventSessionIdle
-  | EventSessionCompacted
   | EventWorktreeReady
   | EventWorktreeFailed
+  | EventServerConnected
+  | EventGlobalDisposed
+  | EventFileEdited
+  | EventSessionCompacted
   | EventWorkspaceReady
   | EventWorkspaceFailed
   | EventWorkspaceStatus
-  | EventServerConnected
-  | EventGlobalDisposed
   | EventServerInstanceDisposed
 
 export type QuestionReplied = {
@@ -702,6 +702,9 @@ export type SessionStatus =
       type: "idle"
     }
   | {
+      type: "stale"
+    }
+  | {
       type: "retry"
       attempt: number
       message: string
@@ -724,13 +727,6 @@ export type GlobalEvent = {
   project?: string
   workspace?: string
   payload:
-    | {
-        id: string
-        type: "models-dev.refreshed"
-        properties: {
-          [key: string]: unknown
-        }
-      }
     | {
         id: string
         type: "credential.added"
@@ -1254,30 +1250,36 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "installation.updated"
-        properties: {
-          version: string
-        }
-      }
-    | {
-        id: string
-        type: "installation.update-available"
-        properties: {
-          version: string
-        }
-      }
-    | {
-        id: string
-        type: "file.edited"
-        properties: {
-          file: string
-        }
-      }
-    | {
-        id: string
-        type: "connector.updated"
+        type: "models-dev.refreshed"
         properties: {
           [key: string]: unknown
+        }
+      }
+    | {
+        id: string
+        type: "permission.asked"
+        properties: {
+          id: string
+          sessionID: string
+          permission: string
+          patterns: Array<string>
+          metadata: {
+            [key: string]: unknown
+          }
+          always: Array<string>
+          tool?: {
+            messageID: string
+            callID: string
+          }
+        }
+      }
+    | {
+        id: string
+        type: "permission.replied"
+        properties: {
+          sessionID: string
+          requestID: string
+          reply: "once" | "always" | "reject"
         }
       }
     | {
@@ -1302,6 +1304,13 @@ export type GlobalEvent = {
           sessionID: string
           requestID: string
           reply: PermissionV2Reply
+        }
+      }
+    | {
+        id: string
+        type: "connector.updated"
+        properties: {
+          [key: string]: unknown
         }
       }
     | {
@@ -1388,40 +1397,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "lsp.updated"
-        properties: {
-          [key: string]: unknown
-        }
-      }
-    | {
-        id: string
-        type: "permission.asked"
-        properties: {
-          id: string
-          sessionID: string
-          permission: string
-          patterns: Array<string>
-          metadata: {
-            [key: string]: unknown
-          }
-          always: Array<string>
-          tool?: {
-            messageID: string
-            callID: string
-          }
-        }
-      }
-    | {
-        id: string
-        type: "permission.replied"
-        properties: {
-          sessionID: string
-          requestID: string
-          reply: "once" | "always" | "reject"
-        }
-      }
-    | {
-        id: string
         type: "tui.prompt.append"
         properties: {
           text: string
@@ -1494,6 +1469,27 @@ export type GlobalEvent = {
           sessionID: string
           arguments: string
           messageID: string
+        }
+      }
+    | {
+        id: string
+        type: "lsp.updated"
+        properties: {
+          [key: string]: unknown
+        }
+      }
+    | {
+        id: string
+        type: "installation.updated"
+        properties: {
+          version: string
+        }
+      }
+    | {
+        id: string
+        type: "installation.update-available"
+        properties: {
+          version: string
         }
       }
     | {
@@ -1584,13 +1580,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "session.compacted"
-        properties: {
-          sessionID: string
-        }
-      }
-    | {
-        id: string
         type: "worktree.ready"
         properties: {
           name: string
@@ -1602,28 +1591,6 @@ export type GlobalEvent = {
         type: "worktree.failed"
         properties: {
           message: string
-        }
-      }
-    | {
-        id: string
-        type: "workspace.ready"
-        properties: {
-          name: string
-        }
-      }
-    | {
-        id: string
-        type: "workspace.failed"
-        properties: {
-          message: string
-        }
-      }
-    | {
-        id: string
-        type: "workspace.status"
-        properties: {
-          workspaceID: string
-          status: "connected" | "connecting" | "disconnected" | "error"
         }
       }
     | {
@@ -1870,6 +1837,8 @@ export type McpLocalConfig = {
     [key: string]: string
   }
   enabled?: boolean
+  lazy?: boolean
+  include_tools?: boolean
   timeout?: number
 }
 
@@ -1891,6 +1860,8 @@ export type McpRemoteConfig = {
    */
   url: string
   enabled?: boolean
+  lazy?: boolean
+  include_tools?: boolean
   headers?: {
     [key: string]: string
   }
@@ -1935,6 +1906,7 @@ export type Config = {
   skills?: {
     paths?: Array<string>
     urls?: Array<string>
+    catalog?: "verbose" | "compact" | "none"
   }
   references?: {
     [key: string]: string | ConfigV2ReferenceGit | ConfigV2ReferenceLocal
@@ -1992,6 +1964,10 @@ export type Config = {
       | {
           enabled: boolean
         }
+  }
+  mcp_profile?: string
+  mcp_profiles?: {
+    [key: string]: Array<string>
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -2051,6 +2027,18 @@ export type Config = {
     preserve_recent_tokens?: number
     reserved?: number
   }
+  commit_message?: {
+    prompt?: string
+    model?: string
+    lock_template?: string
+  }
+  notification?: {
+    enabled?: boolean
+    webhookUrl?: string
+    notify_action?: "webhook"
+    enabled_events?: Array<string>
+    disabled_events?: Array<string>
+  }
   experimental?: {
     disable_paste_summary?: boolean
     batch_tool?: boolean
@@ -2059,6 +2047,35 @@ export type Config = {
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
     policies?: Array<ConfigV2ExperimentalPolicy>
+  }
+  dream?: {
+    auto?: boolean
+    interval_days?: number
+  }
+  checkpoint?: {
+    memory_reconcile_on_search?: boolean
+    /**
+     * Minimum relative BM25 score ratio to include results (default: 0.15)
+     */
+    memory_search_score_floor?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    push_caps?: {
+      checkpoint?: number
+      memory?: number
+      notes?: number
+      global?: number
+    }
+  }
+  distill?: {
+    auto?: boolean
+    interval_days?: number
+  }
+  remember?: {
+    auto?: boolean
+    suggest?: boolean
+    auto_write?: boolean
+  }
+  subagent?: {
+    max_parallel?: number
   }
 }
 
@@ -2415,6 +2432,10 @@ export type McpStatusConnected = {
   status: "connected"
 }
 
+export type McpStatusIdle = {
+  status: "idle"
+}
+
 export type McpStatusDisabled = {
   status: "disabled"
 }
@@ -2435,6 +2456,7 @@ export type McpStatusNeedsClientRegistration = {
 
 export type McpStatus =
   | McpStatusConnected
+  | McpStatusIdle
   | McpStatusDisabled
   | McpStatusFailed
   | McpStatusNeedsAuth
@@ -4261,14 +4283,6 @@ export type ReferenceInfo = {
   source: ReferenceLocalSource | ReferenceGitSource
 }
 
-export type EventModelsDevRefreshed = {
-  id: string
-  type: "models-dev.refreshed"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
 export type EventCredentialAdded = {
   id: string
   type: "credential.added"
@@ -4932,35 +4946,40 @@ export type EventSessionError = {
   }
 }
 
-export type EventInstallationUpdated = {
+export type EventModelsDevRefreshed = {
   id: string
-  type: "installation.updated"
-  properties: {
-    version: string
-  }
-}
-
-export type EventInstallationUpdateAvailable = {
-  id: string
-  type: "installation.update-available"
-  properties: {
-    version: string
-  }
-}
-
-export type EventFileEdited = {
-  id: string
-  type: "file.edited"
-  properties: {
-    file: string
-  }
-}
-
-export type EventConnectorUpdated = {
-  id: string
-  type: "connector.updated"
+  type: "models-dev.refreshed"
   properties: {
     [key: string]: unknown
+  }
+}
+
+export type EventPermissionAsked = {
+  id: string
+  type: "permission.asked"
+  properties: {
+    id: string
+    sessionID: string
+    permission: string
+    patterns: Array<string>
+    metadata: {
+      [key: string]: unknown
+    }
+    always: Array<string>
+    tool?: {
+      messageID: string
+      callID: string
+    }
+  }
+}
+
+export type EventPermissionReplied = {
+  id: string
+  type: "permission.replied"
+  properties: {
+    sessionID: string
+    requestID: string
+    reply: "once" | "always" | "reject"
   }
 }
 
@@ -4987,6 +5006,14 @@ export type EventPermissionV2Replied = {
     sessionID: string
     requestID: string
     reply: PermissionV2Reply
+  }
+}
+
+export type EventConnectorUpdated = {
+  id: string
+  type: "connector.updated"
+  properties: {
+    [key: string]: unknown
   }
 }
 
@@ -5082,43 +5109,6 @@ export type EventTodoUpdated = {
   }
 }
 
-export type EventLspUpdated = {
-  id: string
-  type: "lsp.updated"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventPermissionAsked = {
-  id: string
-  type: "permission.asked"
-  properties: {
-    id: string
-    sessionID: string
-    permission: string
-    patterns: Array<string>
-    metadata: {
-      [key: string]: unknown
-    }
-    always: Array<string>
-    tool?: {
-      messageID: string
-      callID: string
-    }
-  }
-}
-
-export type EventPermissionReplied = {
-  id: string
-  type: "permission.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply: "once" | "always" | "reject"
-  }
-}
-
 export type EventMcpToolsChanged = {
   id: string
   type: "mcp.tools.changed"
@@ -5144,6 +5134,30 @@ export type EventCommandExecuted = {
     sessionID: string
     arguments: string
     messageID: string
+  }
+}
+
+export type EventLspUpdated = {
+  id: string
+  type: "lsp.updated"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventInstallationUpdated = {
+  id: string
+  type: "installation.updated"
+  properties: {
+    version: string
+  }
+}
+
+export type EventInstallationUpdateAvailable = {
+  id: string
+  type: "installation.update-available"
+  properties: {
+    version: string
   }
 }
 
@@ -5241,14 +5255,6 @@ export type EventSessionIdle = {
   }
 }
 
-export type EventSessionCompacted = {
-  id: string
-  type: "session.compacted"
-  properties: {
-    sessionID: string
-  }
-}
-
 export type EventWorktreeReady = {
   id: string
   type: "worktree.ready"
@@ -5263,6 +5269,38 @@ export type EventWorktreeFailed = {
   type: "worktree.failed"
   properties: {
     message: string
+  }
+}
+
+export type EventServerConnected = {
+  id: string
+  type: "server.connected"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventGlobalDisposed = {
+  id: string
+  type: "global.disposed"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventFileEdited = {
+  id: string
+  type: "file.edited"
+  properties: {
+    file: string
+  }
+}
+
+export type EventSessionCompacted = {
+  id: string
+  type: "session.compacted"
+  properties: {
+    sessionID: string
   }
 }
 
@@ -5288,22 +5326,6 @@ export type EventWorkspaceStatus = {
   properties: {
     workspaceID: string
     status: "connected" | "connecting" | "disconnected" | "error"
-  }
-}
-
-export type EventServerConnected = {
-  id: string
-  type: "server.connected"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventGlobalDisposed = {
-  id: string
-  type: "global.disposed"
-  properties: {
-    [key: string]: unknown
   }
 }
 
@@ -8255,6 +8277,40 @@ export type SessionAbortResponses = {
 
 export type SessionAbortResponse = SessionAbortResponses[keyof SessionAbortResponses]
 
+export type SessionReconcileData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/reconcile"
+}
+
+export type SessionReconcileErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionReconcileError = SessionReconcileErrors[keyof SessionReconcileErrors]
+
+export type SessionReconcileResponses = {
+  /**
+   * Reconciled session
+   */
+  200: boolean
+}
+
+export type SessionReconcileResponse = SessionReconcileResponses[keyof SessionReconcileResponses]
+
 export type SessionInitData = {
   body?: {
     modelID: string
@@ -8464,6 +8520,7 @@ export type SessionCommandData = {
     arguments: string
     command: string
     variant?: string
+    noReply?: boolean
     parts?: Array<{
       id?: string
       type: "file"

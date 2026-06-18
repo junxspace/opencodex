@@ -1,7 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
-import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Cause } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -207,6 +207,54 @@ describe("tool.task", () => {
         },
       },
     },
+  )
+
+  it.instance(
+    "execute rejects new subagents when max_parallel is reached",
+    () =>
+      Effect.gen(function* () {
+        const background = yield* BackgroundJob.Service
+        const { chat, assistant } = yield* seed()
+        yield* background.start({
+          id: "child-a",
+          type: "task",
+          metadata: { parentSessionId: chat.id },
+          run: Effect.never,
+        })
+        yield* background.start({
+          id: "child-b",
+          type: "task",
+          metadata: { parentSessionId: chat.id },
+          run: Effect.never,
+        })
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const exit = yield* def
+          .execute(
+            {
+              description: "extra task",
+              prompt: "do more",
+              subagent_type: "general",
+            },
+            {
+              sessionID: chat.id,
+              messageID: assistant.id,
+              agent: "build",
+              abort: new AbortController().signal,
+              extra: { promptOps: stubOps() },
+              messages: [],
+              metadata: () => Effect.void,
+              ask: () => Effect.void,
+            },
+          )
+          .pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(String(Cause.squash(exit.cause))).toContain("Too many parallel subagents")
+        }
+      }),
+    { config: { subagent: { max_parallel: 2 } } },
   )
 
   it.instance("execute resumes an existing task session from task_id", () =>

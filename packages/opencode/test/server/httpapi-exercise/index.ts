@@ -1209,6 +1209,27 @@ const scenarios: Scenario[] = [
       check(body === true, "missing session abort should remain a no-op success")
     }),
   http.protected
+    .post("/session/{sessionID}/reconcile", "session.reconcile")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Reconcile session" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/reconcile", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      check(body === true, "reconcile should return true")
+    }),
+  http.protected
+    .post("/session/{sessionID}/reconcile", "session.reconcile.missing")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/reconcile", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, (body) => {
+      object(body)
+      check(body.name === "NotFoundError", "missing session reconcile should return not found")
+    }),
+  http.protected
     .post("/session/{sessionID}/init", "session.init")
     .preserveDatabase()
     .withLlm()

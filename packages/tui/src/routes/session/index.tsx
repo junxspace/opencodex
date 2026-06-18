@@ -465,6 +465,18 @@ export function Session() {
     }
   }
 
+  const hasStaleTasks = createMemo(() => {
+    const value = sync.data.session_status?.[route.sessionID]
+    if (value?.type === "stale") return true
+    if (value?.type !== "idle") return false
+    return messages().some((message) =>
+      (sync.data.part[message.id] ?? []).some(
+        (part) =>
+          part.type === "tool" && (part.state.status === "running" || part.state.status === "pending"),
+      ),
+    )
+  })
+
   const sessionCommandList = createMemo(() => [
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
@@ -644,6 +656,27 @@ export function Session() {
             { input: "", parts: [] as PromptInfo["parts"] },
           ),
         )
+        dialog.clear()
+      },
+    },
+    {
+      title: "Repair stuck subagents",
+      value: "session.reconcile",
+      category: "Session",
+      enabled: hasStaleTasks(),
+      slash: {
+        name: "reconcile",
+      },
+      run: async () => {
+        void sdk.client.session
+          .reconcile({ sessionID: route.sessionID })
+          .then(() => toast.show({ message: "Repaired stale subagent state", variant: "success" }))
+          .catch((error) => {
+            toast.show({
+              message: error instanceof Error ? error.message : "Failed to repair session",
+              variant: "error",
+            })
+          })
         dialog.clear()
       },
     },
@@ -2264,6 +2297,13 @@ function Task(props: ToolProps) {
   const status = createMemo(() => sync.data.session_status[sessionID() ?? ""])
   const isRunning = createMemo(() => {
     const value = status()
+    const foregroundStale =
+      props.part.state.status === "running" &&
+      props.metadata.background !== true &&
+      value !== undefined &&
+      value.type === "idle"
+    if (foregroundStale) return false
+
     return (
       props.part.state.status === "running" ||
       (props.metadata.background === true && value !== undefined && value.type !== "idle")

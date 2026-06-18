@@ -93,6 +93,7 @@ const SessionRow = (props: {
   dense?: boolean
   tint: Accessor<string | undefined>
   isWorking: Accessor<boolean>
+  isStale: Accessor<boolean>
   hasPermissions: Accessor<boolean>
   hasError: Accessor<boolean>
   unseenCount: Accessor<number>
@@ -114,7 +115,7 @@ const SessionRow = (props: {
         props.clearHoverProjectSoon()
       }}
     >
-      <Show when={props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0}>
+      <Show when={props.isWorking() || props.isStale() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0}>
         <div
           class="shrink-0 size-6 flex items-center justify-center"
           style={{ color: props.tint() ?? "var(--icon-interactive-base)" }}
@@ -122,6 +123,9 @@ const SessionRow = (props: {
           <Switch>
             <Match when={props.isWorking()}>
               <Spinner class="size-[15px]" />
+            </Match>
+            <Match when={props.isStale()}>
+              <div class="size-1.5 rounded-full bg-surface-warning-strong" />
             </Match>
             <Match when={props.hasPermissions()}>
               <div class="size-1.5 rounded-full bg-surface-warning-strong" />
@@ -159,6 +163,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     if (hasPermissions()) return false
     return sessionStore.session_working(props.session.id)
   })
+  const isStale = createMemo(() => sessionStore.session_status[props.session.id]?.type === "stale")
 
   const tint = createMemo(() => messageAgentColor(sessionStore.message[props.session.id], sessionStore.agent))
   const tooltip = createMemo(() => props.showTooltip ?? (props.mobile || !props.sidebarExpanded()))
@@ -195,6 +200,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       dense={props.dense}
       tint={tint}
       isWorking={isWorking}
+      isStale={isStale}
       hasPermissions={hasPermissions}
       hasError={hasError}
       unseenCount={unseenCount}

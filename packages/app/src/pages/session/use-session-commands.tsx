@@ -346,6 +346,38 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
+  const hasStaleTasks = () => {
+    const sessionID = params.id
+    if (!sessionID) return false
+    const status = sync.data.session_status[sessionID]
+    if (status?.type === "stale") return true
+    if (status?.type !== "idle") return false
+    return messages().some((message) =>
+      (sync.data.part[message.id] ?? []).some(
+        (part) =>
+          part.type === "tool" && (part.state.status === "running" || part.state.status === "pending"),
+      ),
+    )
+  }
+
+  const reconcile = async () => {
+    const sessionID = params.id
+    if (!sessionID) return
+
+    try {
+      await sdk.client.session.reconcile({ sessionID })
+      showToast({
+        title: language.t("toast.session.reconcile.success.title"),
+        description: language.t("toast.session.reconcile.success.description"),
+      })
+    } catch {
+      showToast({
+        title: language.t("toast.session.reconcile.failed.title"),
+        description: language.t("toast.session.reconcile.failed.description"),
+      })
+    }
+  }
+
   const fork = () => {
     void import("@/components/dialog-fork").then((x) => {
       dialog.show(() => <x.DialogFork />)
@@ -407,6 +439,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "compact",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: compact,
+    }),
+    sessionCommand({
+      id: "session.reconcile",
+      title: language.t("command.session.reconcile"),
+      description: language.t("command.session.reconcile.description"),
+      slash: "reconcile",
+      disabled: !hasStaleTasks(),
+      onSelect: reconcile,
     }),
     sessionCommand({
       id: "session.fork",

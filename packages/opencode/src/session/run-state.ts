@@ -6,11 +6,14 @@ import { BackgroundJob } from "@/background/job"
 import { Effect, Latch, Layer, Scope, Context } from "effect"
 import { Session } from "./session"
 import { SessionID } from "./schema"
+import { SessionReconcile } from "./reconcile"
 import { SessionStatus } from "./status"
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly reconcileTree: (sessionID: SessionID) => Effect.Effect<void>
+  readonly isStale: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly ensureRunning: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<SessionV1.WithParts>,
@@ -30,6 +33,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
+    const reconcile = yield* SessionReconcile.Service
     const status = yield* SessionStatus.Service
 
     const state = yield* InstanceState.make(
@@ -43,6 +47,7 @@ export const layer = Layer.effect(
               discard: true,
             })
             runners.clear()
+            yield* reconcile.reconcileProject().pipe(Effect.catch(() => Effect.void))
           }),
         )
         return { runners, scope }
@@ -80,6 +85,7 @@ export const layer = Layer.effect(
       const existing = data.runners.get(sessionID)
       if (!existing) {
         yield* status.set(sessionID, { type: "idle" })
+        yield* reconcile.reconcileTree(sessionID).pipe(Effect.catch(() => Effect.void))
         return
       }
       yield* existing.cancel
@@ -104,12 +110,20 @@ export const layer = Layer.effect(
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({
+      assertNotBusy,
+      cancel,
+      reconcileTree: reconcile.reconcileTree,
+      isStale: reconcile.isStale,
+      ensureRunning,
+      startShell,
+    })
   }),
 )
 
 export const defaultLayer = layer.pipe(
   Layer.provide(BackgroundJob.defaultLayer),
+  Layer.provide(SessionReconcile.defaultLayer),
   Layer.provide(SessionStatus.defaultLayer),
 )
 
@@ -151,6 +165,6 @@ function busyError(sessionID: SessionID) {
   return new Session.BusyError({ sessionID })
 }
 
-export const node = LayerNode.make(layer, [BackgroundJob.node, SessionStatus.node])
+export const node = LayerNode.make(layer, [BackgroundJob.node, SessionReconcile.node, SessionStatus.node])
 
 export * as SessionRunState from "./run-state"

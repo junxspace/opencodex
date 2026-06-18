@@ -137,6 +137,25 @@ export const TaskTool = Tool.define(
       const session = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
+      const isResume = params.task_id !== undefined && session !== undefined
+      if (!isResume) {
+        const jobs = yield* background.list()
+        const running = jobs.filter(
+          (job) =>
+            job.status === "running" &&
+            job.type === id &&
+            job.metadata?.parentSessionId === ctx.sessionID,
+        )
+        const limit = cfg.subagent?.max_parallel ?? 3
+        if (running.length >= limit) {
+          return yield* Effect.fail(
+            new Error(
+              `Too many parallel subagents (${running.length}/${limit}). Wait for one to finish or resume an existing task.`,
+            ),
+          )
+        }
+      }
+
       const parent = yield* sessions.get(ctx.sessionID)
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],

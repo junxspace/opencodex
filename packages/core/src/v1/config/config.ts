@@ -253,6 +253,13 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Automatic memory capture configuration" }),
+  subagent: Schema.optional(
+    Schema.Struct({
+      max_parallel: Schema.optional(PositiveInt).annotate({
+        description: "Maximum parallel task subagents per parent session (default: 3)",
+      }),
+    }),
+  ).annotate({ description: "Subagent execution limits" }),
 }).annotate({ identifier: "Config" })
 
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>

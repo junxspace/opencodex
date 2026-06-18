@@ -310,6 +310,13 @@ describe("session HttpApi", () => {
         expect(abort.status).toBe(200)
         expect(yield* responseJson(abort)).toBe(true)
 
+        const reconcile = yield* request(pathFor(SessionPaths.reconcile, { sessionID: missingSession }), {
+          headers,
+          method: "POST",
+        })
+        expect(reconcile.status).toBe(404)
+        expect(yield* responseJson(reconcile)).toEqual(missingSessionBody)
+
         const session = yield* createSession({ title: "missing message" })
         const missingMessage = MessageID.ascending()
         const message = yield* request(

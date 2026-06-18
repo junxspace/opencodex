@@ -73,7 +73,23 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const status = Effect.fn("SessionHttpApi.status")(function* () {
-      return Object.fromEntries(yield* statusSvc.list())
+      const recorded = yield* statusSvc.list()
+      const list = yield* session.list()
+      const result: Record<string, SessionStatus.Info> = {}
+      for (const item of list) {
+        const current = recorded.get(item.id)
+        if (current?.type === "busy" || current?.type === "retry") {
+          result[item.id] = current
+          continue
+        }
+        if (yield* runState.isStale(item.id)) {
+          result[item.id] = { type: "stale" }
+        }
+      }
+      for (const [sessionID, info] of recorded) {
+        if (result[sessionID] === undefined) result[sessionID] = info
+      }
+      return result
     })
 
     const requireSession = Effect.fn("SessionHttpApi.requireSession")(function* (sessionID: SessionID) {
@@ -229,6 +245,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* promptSvc.cancel(ctx.params.sessionID)
+      return true
+    })
+
+    const reconcile = Effect.fn("SessionHttpApi.reconcile")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      yield* runState.reconcileTree(ctx.params.sessionID)
       return true
     })
 
@@ -422,6 +444,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("update", update)
       .handleRaw("fork", forkRaw)
       .handle("abort", abort)
+      .handle("reconcile", reconcile)
       .handle("init", init)
       .handle("share", share)
       .handle("unshare", unshare)

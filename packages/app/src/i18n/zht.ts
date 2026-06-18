@@ -85,6 +85,8 @@ export const dict = {
   "command.session.redo.description": "重做上一則復原的訊息",
   "command.session.compact": "精簡工作階段",
   "command.session.compact.description": "總結工作階段以減少上下文大小",
+  "command.session.reconcile": "修復卡住的子代理",
+  "command.session.reconcile.description": "清除子代理中斷後殘留的執行中狀態",
   "command.session.fork": "從訊息分支",
   "command.session.fork.description": "從先前的訊息建立新工作階段",
   "command.session.share": "分享工作階段",
@@ -434,6 +436,10 @@ export const dict = {
   "toast.session.unshare.success.description": "工作階段已成功取消分享",
   "toast.session.unshare.failed.title": "取消分享失敗",
   "toast.session.unshare.failed.description": "取消分享工作階段時發生錯誤",
+  "toast.session.reconcile.success.title": "工作階段已修復",
+  "toast.session.reconcile.success.description": "已清除殘留的子代理執行狀態",
+  "toast.session.reconcile.failed.title": "修復工作階段失敗",
+  "toast.session.reconcile.failed.description": "修復工作階段時發生錯誤",
 
   "toast.session.listFailed.title": "無法載入 {{project}} 的工作階段",
 

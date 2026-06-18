@@ -36,6 +36,7 @@ import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
+import { SessionReconcile } from "../../src/session/reconcile"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
@@ -152,7 +153,12 @@ const lsp = Layer.succeed(
 )
 
 const status = SessionStatus.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer))
-const run = SessionRunState.layer.pipe(Layer.provide(status))
+const reconcile = SessionReconcile.layer.pipe(Layer.provide(Session.defaultLayer), Layer.provide(status))
+const run = SessionRunState.layer.pipe(
+  Layer.provide(BackgroundJob.defaultLayer),
+  Layer.provide(reconcile),
+  Layer.provide(status),
+)
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
 const processorCreateStarted: Array<() => void> = []

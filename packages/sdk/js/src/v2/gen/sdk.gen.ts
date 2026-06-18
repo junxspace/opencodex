@@ -203,6 +203,8 @@ import type {
   SessionPromptAsyncResponses,
   SessionPromptErrors,
   SessionPromptResponses,
+  SessionReconcileErrors,
+  SessionReconcileResponses,
   SessionRevertErrors,
   SessionRevertResponses,
   SessionShareErrors,
@@ -3939,6 +3941,38 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Reconcile session
+   *
+   * Repair stale tool and subagent state when a session is idle but still shows running tasks.
+   */
+  public reconcile<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionReconcileResponses, SessionReconcileErrors, ThrowOnError>({
+      url: "/session/{sessionID}/reconcile",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Initialize session
    *
    * Analyze the current application and create an AGENTS.md file with project-specific agent configurations.
@@ -4164,6 +4198,7 @@ export class Session2 extends HeyApiClient {
       arguments?: string
       command?: string
       variant?: string
+      noReply?: boolean
       parts?: Array<{
         id?: string
         type: "file"
@@ -4189,6 +4224,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "arguments" },
             { in: "body", key: "command" },
             { in: "body", key: "variant" },
+            { in: "body", key: "noReply" },
             { in: "body", key: "parts" },
           ],
         },
