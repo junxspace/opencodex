@@ -1,10 +1,11 @@
-import { createEffect, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
+import { createEffect, createMemo, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
 import { animate, type AnimationPlaybackControls } from "motion"
 import { useI18n } from "../context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "./collapsible"
 import type { IconProps } from "./icon"
 import { TextShimmer } from "./text-shimmer"
+import { useLiveDuration } from "../hooks/use-live-duration"
 
 export type TriggerTitle = {
   title: string
@@ -27,6 +28,8 @@ export interface BasicToolProps {
   trigger: TriggerTitle | JSX.Element
   children?: JSX.Element
   status?: string
+  startedAt?: number
+  endedAt?: number
   hideDetails?: boolean
   defaultOpen?: boolean
   open?: boolean
@@ -89,6 +92,9 @@ export function BasicTool(props: BasicToolProps) {
   const ready = () => state.ready
   const pending = () => props.status === "pending" || props.status === "running"
   const hasChildren = () => (props.defer ? "children" in props : props.children)
+  const startedAt = createMemo(() => props.startedAt)
+  const endedAt = createMemo(() => props.endedAt)
+  const duration = useLiveDuration(startedAt, endedAt, pending)
 
   let cancelReady: (() => void) | undefined
 
@@ -241,6 +247,11 @@ export function BasicTool(props: BasicToolProps) {
             </Match>
             <Match when={true}>{props.trigger as JSX.Element}</Match>
           </Switch>
+          <Show when={duration()}>
+            <span data-slot="basic-tool-tool-duration" class="text-12-regular text-text-weak shrink-0">
+              {duration()}
+            </span>
+          </Show>
         </div>
       </div>
       <Show when={hasChildren() && !props.hideDetails && !props.locked && !pending()}>

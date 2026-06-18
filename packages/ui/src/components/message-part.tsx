@@ -58,6 +58,8 @@ import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
+import { toolTiming } from "@opencode-ai/core/util/duration"
+import { useLiveDuration } from "../hooks/use-live-duration"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -933,6 +935,48 @@ export function AssistantMessageDisplay(props: {
   )
 }
 
+function ContextToolItem(props: { part: ToolPart; i18n: ReturnType<typeof useI18n> }) {
+  const trigger = createMemo(() => contextToolTrigger(props.part, props.i18n))
+  const running = createMemo(
+    () => props.part.state.status === "pending" || props.part.state.status === "running",
+  )
+  const timing = createMemo(() => toolTiming(props.part.state))
+  const duration = useLiveDuration(
+    () => timing()?.start,
+    () => timing()?.end,
+    () => props.part.state.status === "running",
+  )
+
+  return (
+    <div data-slot="context-tool-group-item">
+      <div data-component="tool-trigger">
+        <div data-slot="basic-tool-tool-trigger-content">
+          <div data-slot="basic-tool-tool-info">
+            <div data-slot="basic-tool-tool-info-structured">
+              <div data-slot="basic-tool-tool-info-main">
+                <span data-slot="basic-tool-tool-title">
+                  <TextShimmer text={trigger().title} active={running()} />
+                </span>
+                <Show when={!running() && trigger().subtitle}>
+                  <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
+                </Show>
+                <Show when={!running() && trigger().args?.length}>
+                  <For each={trigger().args}>{(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}</For>
+                </Show>
+              </div>
+            </div>
+            <Show when={duration()}>
+              <span data-slot="basic-tool-tool-duration" class="text-12-regular text-text-weak shrink-0">
+                {duration()}
+              </span>
+            </Show>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean; onSizeChange?: () => void }) {
   const i18n = useI18n()
   const [open, setOpen] = createSignal(false)
@@ -1002,39 +1046,7 @@ export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean; onS
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div data-component="context-tool-group-list">
-          <Index each={props.parts}>
-            {(partAccessor) => {
-              const trigger = createMemo(() => contextToolTrigger(partAccessor(), i18n))
-              const running = createMemo(
-                () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
-              )
-              return (
-                <div data-slot="context-tool-group-item">
-                  <div data-component="tool-trigger">
-                    <div data-slot="basic-tool-tool-trigger-content">
-                      <div data-slot="basic-tool-tool-info">
-                        <div data-slot="basic-tool-tool-info-structured">
-                          <div data-slot="basic-tool-tool-info-main">
-                            <span data-slot="basic-tool-tool-title">
-                              <TextShimmer text={trigger().title} active={running()} />
-                            </span>
-                            <Show when={!running() && trigger().subtitle}>
-                              <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
-                            </Show>
-                            <Show when={!running() && trigger().args?.length}>
-                              <For each={trigger().args}>
-                                {(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}
-                              </For>
-                            </Show>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )
-            }}
-          </Index>
+          <Index each={props.parts}>{(partAccessor) => <ContextToolItem part={partAccessor()} i18n={i18n} />}</Index>
         </div>
       </Collapsible.Content>
     </Collapsible>
@@ -1286,6 +1298,8 @@ export interface ToolProps {
   sessionID?: string
   output?: string
   status?: string
+  startedAt?: number
+  endedAt?: number
   hideDetails?: boolean
   defaultOpen?: boolean
   open?: boolean
@@ -1392,6 +1406,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
+  const timing = createMemo(() => toolTiming(part().state))
+
   return (
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
@@ -1432,6 +1448,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               // @ts-expect-error
               output={part().state.output}
               status={part().state.status}
+              startedAt={timing()?.start}
+              endedAt={timing()?.end}
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
               open={controlledOpen()}

@@ -73,6 +73,11 @@
     justify-content: flex-start;
   }
 
+  [data-slot="basic-tool-tool-duration"] {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
   [data-slot="basic-tool-tool-info-main"] {
     display: flex;
     align-items: baseline;

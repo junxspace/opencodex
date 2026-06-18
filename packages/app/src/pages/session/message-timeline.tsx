@@ -41,6 +41,7 @@ import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { useBusySince, useLiveDuration } from "@opencode-ai/ui/hooks"
 import type {
   AssistantMessage,
   Message as MessageType,
@@ -327,6 +328,8 @@ export function MessageTimeline(props: {
     return sync.data.session_status[id] ?? idle
   })
   const working = createMemo(() => sessionStatus().type !== "idle")
+  const busySince = useBusySince(working)
+  const workingDuration = useLiveDuration(busySince, () => undefined, working)
   const tint = createMemo(() => messageAgentColor(sessionMessages(), sync.data.agent))
 
   const [timeoutDone, setTimeoutDone] = createSignal(true)
@@ -1343,17 +1346,20 @@ export function MessageTimeline(props: {
                   <div
                     class="shrink-0 flex items-center justify-center overflow-hidden transition-[width,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
                     style={{
-                      width: working() ? "16px" : "0px",
+                      width: working() ? "auto" : "0px",
                       "margin-right": working() ? "8px" : "0px",
                     }}
                     aria-hidden="true"
                   >
                     <Show when={workingStatus() !== "hidden"}>
                       <div
-                        class="transition-opacity duration-200 ease-out"
+                        class="flex items-center gap-1.5 transition-opacity duration-200 ease-out"
                         classList={{ "opacity-0": workingStatus() === "hiding" }}
                       >
                         <Spinner class="size-4" style={{ color: tint() ?? "var(--icon-interactive-base)" }} />
+                        <Show when={workingDuration()}>
+                          <span class="text-12-regular text-text-weak shrink-0 tabular-nums">{workingDuration()}</span>
+                        </Show>
                       </div>
                     </Show>
                   </div>

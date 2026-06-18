@@ -81,6 +81,7 @@ import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
+import { useLiveDuration, useToolDuration } from "../../util/live-duration"
 
 addDefaultParsers(parsers.parsers)
 
@@ -1648,10 +1649,11 @@ function ReasoningPart(props: {
   // Flips independently of the parent message completing.
   const isDone = createMemo(() => props.part.time.end !== undefined)
   const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
-  const duration = createMemo(() => {
-    const end = props.part.time.end
-    return end === undefined ? 0 : Math.max(0, end - props.part.time.start)
-  })
+  const liveDuration = useLiveDuration(
+    () => props.part.time.start,
+    () => props.part.time.end,
+    () => !isDone(),
+  )
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
 
@@ -1672,7 +1674,7 @@ function ReasoningPart(props: {
             open={!inMinimal() || expanded()}
             done={isDone()}
             title={summary().title}
-            duration={isDone() ? Locale.duration(duration()) : undefined}
+            duration={liveDuration() || undefined}
           />
         </box>
         <Show when={(!inMinimal() || expanded()) && summary().body}>
@@ -1710,7 +1712,9 @@ function ReasoningHeader(props: {
     <Switch>
       <Match when={!props.done}>
         <box flexDirection="row">
-          <Spinner color={fg()}>{props.title ? "Thinking: " + props.title : "Thinking"}</Spinner>
+          <Spinner color={fg()} suffix={props.duration} suffixColor={theme.textMuted}>
+            {props.title ? "Thinking: " + props.title : "Thinking"}
+          </Spinner>
         </box>
       </Match>
       <Match when={true}>
@@ -1945,6 +1949,7 @@ function InlineTool(props: {
       pending={props.pending}
       spinner={props.spinner}
       subagent={props.subagent}
+      part={props.part}
       separateAfter={(id) => id !== undefined && ctx.userMessageIDs().has(id)}
       onMouseOver={() => clickable() && setHover(true)}
       onMouseOut={() => setHover(false)}
@@ -1976,12 +1981,17 @@ export function InlineToolRow(props: {
   pending: string
   spinner?: boolean
   subagent?: boolean
+  part?: ToolPart
   children: JSX.Element
   separateAfter?: (id: string | undefined) => boolean
   onMouseOver?: () => void
   onMouseOut?: () => void
   onMouseUp?: () => void
 }) {
+  const { theme } = useTheme()
+  const toolActive = createMemo(() => props.part?.state.status === "running")
+  const duration = useToolDuration(() => props.part, toolActive)
+
   return (
     <box
       id={props.id}
@@ -2004,7 +2014,9 @@ export function InlineToolRow(props: {
     >
       <Switch>
         <Match when={props.spinner}>
-          <Spinner color={props.color} children={props.children} />
+          <Spinner color={props.color} suffix={duration()} suffixColor={theme.textMuted}>
+            {props.children}
+          </Spinner>
         </Match>
         <Match when={true}>
           <Show
@@ -2027,6 +2039,7 @@ export function InlineToolRow(props: {
               >
                 {props.icon}
               </text>
+            <box flexDirection="row" flexGrow={1}>
               <text
                 flexGrow={1}
                 fg={props.failed ? props.errorColor : props.color}
@@ -2034,6 +2047,10 @@ export function InlineToolRow(props: {
               >
                 {props.children}
               </text>
+              <Show when={duration()}>
+                <text fg={theme.textMuted}>{` ${duration()}`}</text>
+              </Show>
+            </box>
             </box>
           </Show>
         </Match>
@@ -2058,6 +2075,9 @@ function BlockTool(props: {
   const renderer = useRenderer()
   const [hover, setHover] = createSignal(false)
   const error = createMemo(() => (props.part?.state.status === "error" ? props.part.state.error : undefined))
+  const toolActive = createMemo(() => props.part?.state.status === "running")
+  const duration = useToolDuration(() => props.part, toolActive)
+  const titleText = createMemo(() => `${props.title}${duration() ? ` ${duration()}` : ""}`)
   return (
     <box
       id={props.part ? "tool-block-" + props.part.id : undefined}
@@ -2081,11 +2101,13 @@ function BlockTool(props: {
         when={props.spinner}
         fallback={
           <text paddingLeft={3} fg={theme.textMuted}>
-            {props.title}
+            {titleText()}
           </text>
         }
       >
-        <Spinner color={theme.textMuted}>{props.title.replace(/^# /, "")}</Spinner>
+        <Spinner color={theme.textMuted} suffix={duration()}>
+          {props.title.replace(/^# /, "")}
+        </Spinner>
       </Show>
       {props.children}
       <Show when={error()}>
@@ -2156,6 +2178,7 @@ function Shell(props: ToolProps) {
 function Write(props: ToolProps) {
   const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
+  const isRunning = createMemo(() => props.part.state.status === "running")
   const code = createMemo(() => {
     return stringValue(props.input.content) ?? ""
   })
@@ -2181,6 +2204,7 @@ function Write(props: ToolProps) {
           icon="←"
           pending="Preparing write..."
           complete={stringValue(props.input.filePath)}
+          spinner={isRunning()}
           part={props.part}
         >
           Write {pathFormatter.format(stringValue(props.input.filePath))}
@@ -2394,6 +2418,7 @@ function Edit(props: ToolProps) {
   const ctx = use()
   const { theme, syntax } = useTheme()
   const pathFormatter = usePathFormatter()
+  const isRunning = createMemo(() => props.part.state.status === "running")
 
   const view = createMemo(() => {
     const diffStyle = ctx.tui.diff_style
@@ -2435,7 +2460,13 @@ function Edit(props: ToolProps) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="←" pending="Preparing edit..." complete={stringValue(props.input.filePath)} part={props.part}>
+        <InlineTool
+          icon="←"
+          pending="Preparing edit..."
+          complete={stringValue(props.input.filePath)}
+          spinner={isRunning()}
+          part={props.part}
+        >
           Edit {pathFormatter.format(stringValue(props.input.filePath))} {input({ replaceAll: props.input.replaceAll })}
         </InlineTool>
       </Match>
