@@ -7,20 +7,9 @@ import { Config, type Interface as ConfigService } from "@/config/config"
 import { Database } from "@opencode-ai/core/database/database"
 import * as Log from "@opencode-ai/core/util/log"
 import { Database as BunSqlite } from "bun:sqlite"
-import { readlinkSync } from "fs"
 import path from "path"
 
 const log = Log.create({ service: "notification" })
-
-function terminalName() {
-  try {
-    const link = readlinkSync("/dev/fd/2")
-    return path.basename(link)
-  } catch (err) {
-    log.debug("failed to read terminal name", { err })
-    return ""
-  }
-}
 
 function dbFile() {
   return Database.path()
@@ -241,14 +230,10 @@ async function sendWebhook(url: string, status: string, sessionID: string, direc
   const label = STATUS_LABEL[status] ?? "通知"
   const title = sessionTitle(sessionID)
   const msg = userMessage(sessionID)
-  const tty = terminalName()
 
-  const lines = [`${emoji} OpenCode ${label}`]
-  lines.push(`项目: ${projectName(directory)}`)
-  if (tty) lines.push(`终端: ${tty}`)
-  if (title) lines.push(`标题: ${title}`)
-  if (msg) lines.push(`消息: ${msg}`)
-  lines.push(`时间: ${formatTime()}`)
+  const headline = title ? `${emoji} ${title}` : `${emoji} OpenCode ${label}`
+  const lines = [headline, `时间: ${formatTime()}`, `项目: ${projectName(directory)}`]
+  if (msg) lines.push(`内容: ${msg}`)
 
   try {
     const response = await fetch(url, {
