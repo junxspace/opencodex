@@ -1,11 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import { describe, expect, test } from "bun:test"
-import type { Event, GlobalEvent, QuestionRequest } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { directory, json, mount, wait } from "./sync-fixture"
 
 const sessionID = "session-1"
 
-function globalEvent(payload: Event): GlobalEvent {
+function globalEvent(payload: GlobalEvent["payload"]): GlobalEvent {
   return {
     directory,
     project: "proj_test",

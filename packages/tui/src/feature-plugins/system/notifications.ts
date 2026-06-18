@@ -9,6 +9,8 @@ type SessionError = Extract<Event, { type: "session.error" }>["properties"]["err
 function routeSessionID(api: TuiPluginApi) {
   const current = api.route.current
   if (current.name !== "session") return
+  if (!("params" in current) || !current.params) return
+  if (typeof current.params.sessionID !== "string") return
   return current.params.sessionID
 }
 

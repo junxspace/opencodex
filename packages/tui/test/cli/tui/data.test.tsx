@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
-import type { Event, GlobalEvent } from "@opencode-ai/sdk/v2"
+import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import { onMount } from "solid-js"
 import { ProjectProvider } from "../../../src/context/project"
 import { SDKProvider } from "../../../src/context/sdk"
@@ -17,11 +17,11 @@ async function wait(fn: () => boolean, timeout = 2000) {
   }
 }
 
-function global(payload: Event): GlobalEvent {
+function global(payload: GlobalEvent["payload"]): GlobalEvent {
   return { directory, project: "proj_test", payload }
 }
 
-function emitEvent(events: ReturnType<typeof createEventSource>, payload: Event) {
+function emitEvent(events: ReturnType<typeof createEventSource>, payload: GlobalEvent["payload"]) {
   events.emit(global(payload))
 }
 

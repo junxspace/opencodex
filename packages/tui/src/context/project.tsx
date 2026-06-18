@@ -2,6 +2,7 @@ import { batch } from "solid-js"
 import type { Path, Workspace } from "@opencode-ai/sdk/v2"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "./helper"
+import { useEvent } from "./event"
 import { useSDK } from "./sdk"
 
 type WorkspaceStatus = "connected" | "connecting" | "disconnected" | "error"
@@ -10,6 +11,7 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
   name: "Project",
   init: () => {
     const sdk = useSDK()
+    const events = useEvent()
 
     const defaultPath = {
       home: "",
@@ -68,10 +70,8 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
       })
     }
 
-    sdk.event.on("event", (event) => {
-      if (event.payload.type === "workspace.status") {
-        setStore("workspace", "status", event.payload.properties.workspaceID, event.payload.properties.status)
-      }
+    events.on("workspace.status", (payload) => {
+      setStore("workspace", "status", payload.properties.workspaceID, payload.properties.status)
     })
 
     return {
