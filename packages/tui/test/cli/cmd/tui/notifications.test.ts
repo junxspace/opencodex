@@ -24,8 +24,7 @@ async function setup() {
     timeout: session("timeout", "Timeout session"),
   }
 
-  await Notifications.tui(
-    createTuiPluginApi({
+  const api = createTuiPluginApi({
       attention: {
         async notify(input) {
           notifications.push(input)
@@ -51,15 +50,20 @@ async function setup() {
           get: (sessionID: string) => sessions[sessionID],
         },
       },
-    }),
-    undefined,
-    {} as never,
-  )
+    })
+
+  await Notifications.tui(api, undefined, {} as never)
 
   return {
     notifications,
     emit(event: Event) {
       for (const handler of handlers.get(event.type) ?? []) handler(event)
+    },
+    view(sessionID: string) {
+      api.route.navigate("session", { sessionID })
+    },
+    viewHome() {
+      api.route.navigate("home")
     },
   }
 }
@@ -168,6 +172,7 @@ describe("internal notifications TUI plugin", () => {
   test("uses sound-only notifications and subagent_done sound for subagent sessions", async () => {
     const harness = await setup()
 
+    harness.view("subagent")
     harness.emit({ id: "event-1", type: "question.asked", properties: question("question-1", "subagent") })
     harness.emit({
       id: "event-2",
@@ -228,6 +233,7 @@ describe("internal notifications TUI plugin", () => {
   test("special-cases aborts and model response timeouts", async () => {
     const harness = await setup()
 
+    harness.view("abort")
     harness.emit({
       id: "event-1",
       type: "session.status",
@@ -238,6 +244,7 @@ describe("internal notifications TUI plugin", () => {
       type: "session.error",
       properties: { sessionID: "abort", error: { name: "MessageAbortedError", data: { message: "Aborted" } } },
     })
+    harness.view("timeout")
     harness.emit({
       id: "event-3",
       type: "session.status",
@@ -261,6 +268,50 @@ describe("internal notifications TUI plugin", () => {
         message: "Model stopped responding",
         notification: { when: "blurred" },
         sound: { name: "error", when: "always" },
+      },
+    ])
+  })
+
+  test("ignores sessions that are not active on this client", async () => {
+    const harness = await setup()
+
+    harness.view("session")
+    harness.emit({
+      id: "event-1",
+      type: "session.status",
+      properties: { sessionID: "other", status: { type: "busy" } },
+    })
+    harness.emit({
+      id: "event-2",
+      type: "session.status",
+      properties: { sessionID: "other", status: { type: "idle" } },
+    })
+    harness.emit({ id: "event-3", type: "permission.asked", properties: permission("permission-1", "other") })
+
+    expect(harness.notifications).toEqual([])
+  })
+
+  test("still notifies after navigating away from an active session", async () => {
+    const harness = await setup()
+
+    harness.emit({
+      id: "event-1",
+      type: "session.status",
+      properties: { sessionID: "session", status: { type: "busy" } },
+    })
+    harness.viewHome()
+    harness.emit({
+      id: "event-2",
+      type: "session.status",
+      properties: { sessionID: "session", status: { type: "idle" } },
+    })
+
+    expect(harness.notifications).toEqual([
+      {
+        title: "Demo session",
+        message: "Session done",
+        notification: { when: "blurred" },
+        sound: { name: "done", when: "always" },
       },
     ])
   })

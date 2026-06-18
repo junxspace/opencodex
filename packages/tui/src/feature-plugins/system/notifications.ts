@@ -6,6 +6,20 @@ const id = "internal:notifications"
 
 type SessionError = Extract<Event, { type: "session.error" }>["properties"]["error"]
 
+function routeSessionID(api: TuiPluginApi) {
+  const current = api.route.current
+  if (current.name !== "session") return
+  return current.params.sessionID
+}
+
+function viewing(api: TuiPluginApi, sessionID: string) {
+  return routeSessionID(api) === sessionID
+}
+
+function relevant(api: TuiPluginApi, sessionID: string, active: ReadonlySet<string>) {
+  return active.has(sessionID) || viewing(api, sessionID)
+}
+
 function notify(api: TuiPluginApi, sessionID: string | undefined, message: string, sound: TuiAttentionSoundName) {
   const session = sessionID ? api.state.session.get(sessionID) : undefined
   const isSubagent = session?.parentID !== undefined
@@ -34,6 +48,7 @@ const tui: TuiPlugin = async (api) => {
 
   api.event.on("question.asked", (event) => {
     if (questions.has(event.properties.id)) return
+    if (!relevant(api, event.properties.sessionID, active)) return
     questions.add(event.properties.id)
     notify(api, event.properties.sessionID, "Question needs input", "question")
   })
@@ -48,6 +63,7 @@ const tui: TuiPlugin = async (api) => {
 
   api.event.on("permission.asked", (event) => {
     if (permissions.has(event.properties.id)) return
+    if (!relevant(api, event.properties.sessionID, active)) return
     permissions.add(event.properties.id)
     notify(api, event.properties.sessionID, "Permission needs input", "permission")
   })
@@ -59,7 +75,7 @@ const tui: TuiPlugin = async (api) => {
   api.event.on("session.status", (event) => {
     const sessionID = event.properties.sessionID
     if (event.properties.status.type === "busy" || event.properties.status.type === "retry") {
-      active.add(sessionID)
+      if (viewing(api, sessionID)) active.add(sessionID)
       errored.delete(sessionID)
       return
     }
