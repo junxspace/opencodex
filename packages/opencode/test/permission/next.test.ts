@@ -382,6 +382,26 @@ test("evaluate - wildcard at end overrides earlier exact match", () => {
   expect(result.action).toBe("allow")
 })
 
+it.instance("ask - forceAsk bypasses allow rules", () =>
+  Effect.gen(function* () {
+    const fiber = yield* ask({
+      sessionID: SessionID.make("session_test"),
+      permission: "destructive_git",
+      patterns: ["git checkout -- foo.ts"],
+      metadata: { forceAsk: true },
+      always: [],
+      ruleset: [{ permission: "destructive_git", pattern: "*", action: "allow" }],
+    }).pipe(Effect.forkScoped)
+
+    const items = yield* waitForPending(1)
+    expect(items).toHaveLength(1)
+    expect(items[0]?.permission).toBe("destructive_git")
+
+    yield* reply({ requestID: items[0]!.id, reply: "once" })
+    yield* Fiber.await(fiber)
+  }),
+)
+
 // wildcard permission tests
 
 test("evaluate - wildcard permission matches any permission", () => {

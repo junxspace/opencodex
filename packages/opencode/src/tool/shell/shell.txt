@@ -15,6 +15,7 @@ ${commandSection}
 - Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files and never commit secrets.
 - Write a concise commit message that matches the repo style.
 - Do not update git config, skip hooks, use interactive `-i`, force-push, or create empty commits unless explicitly requested.
+- Destructive git commands that discard uncommitted changes outside this session (`git checkout --`, `git restore`, `git reset --hard`, `git clean -f`) always require explicit approval and cannot be pre-authorized in config.
 - If a commit fails or hooks reject it, fix the issue and create a new commit; do not amend the failed commit.
 - Before creating a PR, inspect status, diff, remote tracking, recent commits, and the diff from the base branch.
 - Review all commits included in the PR, not just the latest commit.

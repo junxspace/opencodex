@@ -1033,6 +1033,38 @@ describe("tool.shell permissions", () => {
       )
     }),
   )
+
+  each("asks for destructive git guard on unrelated checkout", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const touched = path.join(tmp, "app/layout.tsx")
+          yield* Effect.promise(() => Bun.write(touched, "session\n"))
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          yield* run(
+            {
+              command: "git checkout -- README.md",
+              description: "Revert readme",
+            },
+            {
+              ...capture(requests),
+              messages: [
+                {
+                  info: { id: "msg_1", role: "assistant" } as any,
+                  parts: [{ type: "patch", files: [touched] } as any],
+                },
+              ],
+            },
+          )
+          const guard = requests.find((request) => request.permission === "destructive_git")
+          expect(guard).toBeDefined()
+          expect(guard?.metadata?.forceAsk).toBe(true)
+        }),
+      )
+    }),
+  )
 })
 
 describe("tool.shell abort", () => {

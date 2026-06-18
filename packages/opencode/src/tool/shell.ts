@@ -21,6 +21,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { DestructiveGit } from "./shell/destructive-git"
 
 export { Parameters } from "./shell/prompt"
 
@@ -264,7 +265,28 @@ const ask = Effect.fn("ShellTool.ask")(function* (
   ctx: Tool.Context,
   scan: Scan,
   input: { command: string; description: string },
+  tree: Node,
+  cwd: string,
 ) {
+  const guarded = DestructiveGit.scanDestructiveGit({
+    commands: commands(tree).map((node) => parts(node).map((item) => item.text)),
+    touched: DestructiveGit.sessionTouchedFiles(ctx.messages),
+    cwd,
+  })
+  if (guarded.length > 0) {
+    yield* ctx.ask({
+      permission: "destructive_git",
+      patterns: guarded,
+      always: [],
+      metadata: {
+        command: input.command,
+        description: input.description,
+        guarded,
+        forceAsk: true,
+      },
+    })
+  }
+
   if (scan.dirs.size > 0) {
     const directories = Array.from(scan.dirs)
     const globs = directories.map((dir) => {
@@ -635,7 +657,7 @@ export const ShellTool = Tool.define(
                   )
                   const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
-                  yield* ask(ctx, scan, params)
+                  yield* ask(ctx, scan, params, tree.rootNode, cwd)
                 }),
               )
 

@@ -285,6 +285,33 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               }
             }
 
+            if (permission === "destructive_git") {
+              const command = typeof data.command === "string" ? data.command : ""
+              const guarded = Array.isArray(data.guarded)
+                ? data.guarded.filter((item): item is string => typeof item === "string")
+                : []
+              return {
+                icon: "!",
+                title: "Discard uncommitted changes",
+                body: (
+                  <box paddingLeft={1} gap={1}>
+                    <text fg={theme.textMuted}>
+                      This command may discard uncommitted changes outside this session. Approval is required every
+                      time.
+                    </text>
+                    <Show when={command}>
+                      <text fg={theme.text}>{"$ " + command}</text>
+                    </Show>
+                    <Show when={guarded.length > 0}>
+                      <box gap={0}>
+                        <For each={guarded}>{(item) => <text fg={theme.textMuted}>{"- " + item}</text>}</For>
+                      </box>
+                    </Show>
+                  </box>
+                ),
+              }
+            }
+
             if (permission === "task") {
               const type = typeof data.subagent_type === "string" ? data.subagent_type : "Unknown"
               const desc = typeof data.description === "string" ? data.description : ""
@@ -404,7 +431,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               title="Permission required"
               header={header()}
               body={current.body}
-              options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
+              options={
+                props.request.metadata?.forceAsk === true
+                  ? { once: "Allow once", reject: "Reject" }
+                  : { once: "Allow once", always: "Allow always", reject: "Reject" }
+              }
               escapeKey="reject"
               fullscreen
               onSelect={(option) => {
