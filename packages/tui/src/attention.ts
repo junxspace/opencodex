@@ -180,7 +180,7 @@ export function createTuiAttention(input: {
         const notificationSkip = focusSkip(requestedNotification?.when ?? "blurred", focus)
         const notificationRequested = input.config.attention.notifications && request.notification !== false
         const shouldNotify = notificationRequested && !notificationSkip
-        if (input.config.attention.notifications && request.notification !== false) {
+        if (shouldNotify) {
           try {
             ;(input.renderer as unknown as { writeOut?: (chunk: string) => void }).writeOut?.("\x07")
           } catch {

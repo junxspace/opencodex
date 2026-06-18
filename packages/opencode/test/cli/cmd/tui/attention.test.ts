@@ -12,6 +12,7 @@ class FakeRenderer {
   notificationResult = true
   notificationThrows = false
   notifications: { message: string; title: string | undefined }[] = []
+  bells = 0
   listeners: Record<FocusEvent, Set<() => void>> = {
     focus: new Set(),
     blur: new Set(),
@@ -39,6 +40,10 @@ class FakeRenderer {
     if (this.notificationThrows) throw new Error("notification failed")
     this.notifications.push({ message, title })
     return this.notificationResult
+  }
+
+  writeOut(chunk: string) {
+    if (chunk === "\x07") this.bells += 1
   }
 }
 
@@ -190,6 +195,31 @@ describe("createTuiAttention", () => {
       sound: false,
     })
     expect(renderer.notifications).toEqual([{ title: "opencode", message: "hello" }])
+    expect(renderer.bells).toBe(1)
+  })
+
+  test("does not ring terminal bell while focused for blurred-only notifications", async () => {
+    const renderer = new FakeRenderer()
+    const attention = createTuiAttention({ renderer, config: config(), audio: new FakeAudioEngine() })
+    renderer.emit("focus")
+
+    expect(
+      await attention.notify({ message: "hello", notification: { when: "blurred" }, sound: false }),
+    ).toEqual({
+      ok: false,
+      notification: false,
+      sound: false,
+      skipped: "focused",
+    })
+    expect(renderer.bells).toBe(0)
+
+    renderer.emit("blur")
+    expect(await attention.notify({ message: "hello", notification: { when: "blurred" }, sound: false })).toEqual({
+      ok: true,
+      notification: true,
+      sound: false,
+    })
+    expect(renderer.bells).toBe(1)
   })
 
   test("when requested, blurred-only calls do not notify or play sound while focused", async () => {
