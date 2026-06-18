@@ -257,10 +257,21 @@ export const {
       })
     }
 
+    function refreshSessionStatus() {
+      const workspace = project.workspace.current()
+      return sdk.client.session.status({ workspace }).then((x) => {
+        batch(() => {
+          setStore("session_status", {})
+          setStore("session_status", reconcile(x.data ?? {}))
+        })
+      })
+    }
+
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.connected":
           void refreshPendingPrompts()
+          void refreshSessionStatus()
           break
         case "server.instance.disposed":
           void bootstrap()
@@ -597,9 +608,7 @@ export const {
               .list({ workspace })
               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
             sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
-            sdk.client.session.status({ workspace }).then((x) => {
-              setStore("session_status", reconcile(x.data ?? {}))
-            }),
+            refreshSessionStatus(),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             refreshPendingPrompts(),
@@ -753,6 +762,7 @@ export const {
       },
       bootstrap,
       refreshPending: refreshPendingPrompts,
+      refreshSessionStatus,
     }
     return result
   },

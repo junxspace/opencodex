@@ -45,20 +45,21 @@ export const layer = Layer.effect(
 
     const reconcile = Effect.fn("SessionReconcile.reconcile")(function* (sessionID: SessionID) {
       const current = yield* status.get(sessionID)
-      if (current.type === "busy") return
-
       const messages = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const stale = messages.flatMap((message) => message.parts.filter(staleTool))
-      if (stale.length === 0) return
 
-      yield* Effect.forEach(
-        stale,
-        (part) => sessions.updatePart(interruptToolPart(part)),
-        { concurrency: "unbounded", discard: true },
-      )
+      if (stale.length > 0) {
+        yield* Effect.forEach(
+          stale,
+          (part) => sessions.updatePart(interruptToolPart(part)),
+          { concurrency: "unbounded", discard: true },
+        )
+      }
 
       const last = messages.at(-1)
+
       if (last?.info.role !== "assistant" || last.info.time.completed) return
+      if (current.type === "busy") return
 
       yield* sessions.updateMessage({
         ...last.info,

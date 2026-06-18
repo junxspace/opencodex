@@ -10,7 +10,7 @@ import { Session } from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
 
-import { type Tool as AITool, tool, jsonSchema } from "ai"
+import { type Tool as AITool, tool, jsonSchema, type ModelMessage } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { SystemPrompt } from "./system"
@@ -42,7 +42,7 @@ import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
-import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
+import { Cause, Duration, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
@@ -88,6 +88,36 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
   // cleanup() marks abandoned tool_use blocks this way after retries/aborts.
   // They are not pending work and must not trigger an assistant-prefill request.
   return part.state.status === "error" && part.state.metadata?.interrupted === true
+}
+
+const TURN_PREPARE_TIMEOUT_PREFIX = "Turn preparation timed out after"
+
+function turnPrepareTimeoutError(timeoutMs: number) {
+  return new NamedError.Unknown({
+    message: `${TURN_PREPARE_TIMEOUT_PREFIX} ${timeoutMs}ms`,
+  })
+}
+
+/** @internal Exported for testing */
+export function isTurnPrepareTimeout(error: unknown) {
+  const message =
+    NamedError.Unknown.isInstance(error) && typeof error.data.message === "string"
+      ? error.data.message
+      : error instanceof Error
+        ? error.message
+        : ""
+  return message.startsWith(TURN_PREPARE_TIMEOUT_PREFIX)
+}
+
+/** @internal Exported for testing */
+export function turnPrepareTimeout<A, E, R>(effect: Effect.Effect<A, E, R>, timeoutMs: number | undefined) {
+  if (!timeoutMs) return effect
+  return effect.pipe(
+    Effect.timeoutOrElse({
+      duration: Duration.millis(timeoutMs),
+      orElse: () => Effect.fail(turnPrepareTimeoutError(timeoutMs)),
+    }),
+  )
 }
 
 export interface Interface {
@@ -1345,62 +1375,117 @@ export const layer = Layer.effect(
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
 
-            const tools = yield* SessionTools.resolve({
-              agent,
-              session,
-              model,
-              processor: handle,
-              bypassAgentCheck,
-              messages: msgs,
-              promptOps,
-            }).pipe(
-              Effect.provideService(Plugin.Service, plugin),
-              Effect.provideService(Permission.Service, permission),
-              Effect.provideService(ToolRegistry.Service, registry),
-              Effect.provideService(MCP.Service, mcp),
-              Effect.provideService(Truncate.Service, truncate),
+            yield* Effect.logInfo("turn.prepare.start", {
+              "session.id": sessionID,
+              step,
+              messageID: msg.id,
+            })
+
+            const prepared: {
+              tools: Record<string, AITool>
+              skills: string | undefined
+              env: string[]
+              instructions: string[]
+              memoryContext: string
+              modelMsgs: ModelMessage[]
+            } | undefined = yield* turnPrepareTimeout(
+              Effect.gen(function* () {
+                const tools = yield* SessionTools.resolve({
+                  agent,
+                  session,
+                  model,
+                  processor: handle,
+                  bypassAgentCheck,
+                  messages: msgs,
+                  promptOps,
+                }).pipe(
+                  Effect.provideService(Plugin.Service, plugin),
+                  Effect.provideService(Permission.Service, permission),
+                  Effect.provideService(ToolRegistry.Service, registry),
+                  Effect.provideService(MCP.Service, mcp),
+                  Effect.provideService(Truncate.Service, truncate),
+                )
+
+                yield* Effect.logInfo("turn.prepare.tools", {
+                  "session.id": sessionID,
+                  step,
+                  toolCount: Object.keys(tools).length,
+                })
+
+                if (lastUser.format?.type === "json_schema") {
+                  tools["StructuredOutput"] = createStructuredOutputTool({
+                    schema: lastUser.format.schema,
+                    onSuccess(output) {
+                      structured = output
+                    },
+                  })
+                }
+
+                if (step === 1)
+                  yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
+
+                if (step > 1 && lastFinished) {
+                  for (const m of msgs) {
+                    if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
+                    for (const p of m.parts) {
+                      if (p.type !== "text" || p.ignored || p.synthetic) continue
+                      if (!p.text.trim()) continue
+                      p.text = [
+                        "<system-reminder>",
+                        "The user sent the following message:",
+                        p.text,
+                        "",
+                        "Please address this message and continue with your tasks.",
+                        "</system-reminder>",
+                      ].join("\n")
+                    }
+                  }
+                }
+
+                yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+
+                yield* Effect.logInfo("turn.prepare.context", {
+                  "session.id": sessionID,
+                  step,
+                  messageCount: msgs.length,
+                })
+
+                const [skills, env, instructions, memoryContext, modelMsgs] = yield* Effect.all([
+                  sys.skills(agent),
+                  sys.environment(model),
+                  instruction.system().pipe(Effect.orDie),
+                  MemoryContext.system({ sessionID }).pipe(Effect.catch(() => Effect.succeed(""))),
+                  MessageV2.toModelMessagesEffect(msgs, model),
+                ])
+
+                yield* Effect.logInfo("turn.prepare.done", {
+                  "session.id": sessionID,
+                  step,
+                  modelMessageCount: modelMsgs.length,
+                })
+
+                return { tools, skills, env, instructions, memoryContext, modelMsgs }
+              }),
+              flags.turnPrepareTimeoutMs,
+            ).pipe(
+              Effect.catchIf(isTurnPrepareTimeout, () =>
+                Effect.gen(function* () {
+                  yield* finalizeInterruptedAssistant
+                  const error = turnPrepareTimeoutError(flags.turnPrepareTimeoutMs ?? 0)
+                  yield* events.publish(Session.Event.Error, { sessionID, error: error.toObject() })
+                  return undefined
+                }),
+              ),
             )
 
-            if (lastUser.format?.type === "json_schema") {
-              tools["StructuredOutput"] = createStructuredOutputTool({
-                schema: lastUser.format.schema,
-                onSuccess(output) {
-                  structured = output
-                },
-              })
-            }
+            if (!prepared) return "break" as const
 
-            if (step === 1)
-              yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
-
-            if (step > 1 && lastFinished) {
-              for (const m of msgs) {
-                if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
-                for (const p of m.parts) {
-                  if (p.type !== "text" || p.ignored || p.synthetic) continue
-                  if (!p.text.trim()) continue
-                  p.text = [
-                    "<system-reminder>",
-                    "The user sent the following message:",
-                    p.text,
-                    "",
-                    "Please address this message and continue with your tasks.",
-                    "</system-reminder>",
-                  ].join("\n")
-                }
-              }
-            }
-
-            yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
-
-            const [skills, env, instructions, memoryContext, modelMsgs] = yield* Effect.all([
-              sys.skills(agent),
-              sys.environment(model),
-              instruction.system().pipe(Effect.orDie),
-              MemoryContext.system({ sessionID }).pipe(Effect.catch(() => Effect.succeed(""))),
-              MessageV2.toModelMessagesEffect(msgs, model),
-            ])
-            const system = [...env, ...instructions, ...(skills ? [skills] : []), ...(memoryContext ? [memoryContext] : [])]
+            const system = [
+              ...prepared.env,
+              ...prepared.instructions,
+              ...(prepared.skills ? [prepared.skills] : []),
+              ...(prepared.memoryContext ? [prepared.memoryContext] : []),
+            ]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
@@ -1410,8 +1495,11 @@ export const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
-              tools,
+              messages: [
+                ...prepared.modelMsgs,
+                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+              ],
+              tools: prepared.tools,
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })

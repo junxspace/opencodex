@@ -148,4 +148,91 @@ describe("session.reconcile", () => {
       expect(yield* reconcile.isStale(chat.id)).toBe(true)
     }),
   )
+
+  it.instance("marks orphan assistant shells interrupted when idle", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const reconcile = yield* SessionReconcile.Service
+      const chat = yield* sessions.create({ title: "Orphan shell" })
+      const userID = MessageID.ascending()
+      const assistantID = MessageID.ascending()
+
+      yield* sessions.updateMessage({
+        id: userID,
+        sessionID: chat.id,
+        role: "user",
+        agent: "build",
+        model: { providerID: ref.providerID, modelID: ref.modelID },
+        time: { created: Date.now() },
+      })
+      yield* sessions.updateMessage({
+        id: assistantID,
+        sessionID: chat.id,
+        role: "assistant",
+        parentID: userID,
+        mode: "build",
+        agent: "build",
+        cost: 0,
+        path: { cwd: "/tmp", root: "/tmp" },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: Date.now() },
+      })
+
+      yield* reconcile.reconcile(chat.id)
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const assistant = messages.at(-1)?.info
+      expect(assistant?.role).toBe("assistant")
+      if (assistant?.role === "assistant") {
+        expect(assistant.error?.name).toBe("MessageAbortedError")
+        expect(assistant.time.completed).toBeNumber()
+      }
+    }),
+  )
+
+  it.instance("skips orphan assistant cleanup while session is busy", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const reconcile = yield* SessionReconcile.Service
+      const sessionStatus = yield* SessionStatus.Service
+      const chat = yield* sessions.create({ title: "Busy orphan shell" })
+      const userID = MessageID.ascending()
+      const assistantID = MessageID.ascending()
+
+      yield* sessions.updateMessage({
+        id: userID,
+        sessionID: chat.id,
+        role: "user",
+        agent: "build",
+        model: { providerID: ref.providerID, modelID: ref.modelID },
+        time: { created: Date.now() },
+      })
+      yield* sessions.updateMessage({
+        id: assistantID,
+        sessionID: chat.id,
+        role: "assistant",
+        parentID: userID,
+        mode: "build",
+        agent: "build",
+        cost: 0,
+        path: { cwd: "/tmp", root: "/tmp" },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: Date.now() },
+      })
+      yield* sessionStatus.set(chat.id, { type: "busy" })
+
+      yield* reconcile.reconcile(chat.id)
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const assistant = messages.at(-1)?.info
+      expect(assistant?.role).toBe("assistant")
+      if (assistant?.role === "assistant") {
+        expect(assistant.time.completed).toBeUndefined()
+      }
+    }),
+  )
 })

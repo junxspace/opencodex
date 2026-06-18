@@ -99,4 +99,22 @@ describe("tui sync pending prompts", () => {
       app.renderer.destroy()
     }
   })
+
+  test("server.connected clears stale session status", async () => {
+    const { app, emit, sync } = await mount()
+    try {
+      emit(
+        globalEvent({
+          id: "event-1",
+          type: "session.status",
+          properties: { sessionID, status: { type: "busy" } },
+        }),
+      )
+      await wait(() => sync.data.session_status[sessionID]?.type === "busy")
+      emit(globalEvent({ id: "event-2", type: "server.connected", properties: {} }))
+      await wait(() => sync.data.session_status[sessionID] === undefined)
+    } finally {
+      app.renderer.destroy()
+    }
+  })
 })
