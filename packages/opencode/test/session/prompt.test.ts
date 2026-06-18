@@ -25,7 +25,7 @@ import { Image } from "../../src/image/image"
 
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
-import { Session } from "@/session/session"
+import { Session, isDefaultTitle } from "@/session/session"
 import { SessionMessageTable } from "@opencode-ai/core/session/sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -509,6 +509,37 @@ it.instance("loop calls LLM and returns assistant message", () =>
     const parts = result.parts.filter((p) => p.type === "text")
     expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
     expect(yield* llm.hits).toHaveLength(1)
+  }),
+)
+
+it.instance("loop generates a title on the first provider turn", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    expect(isDefaultTitle(chat.title)).toBe(true)
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "explain the config file" }],
+    })
+    yield* llm.text("here is the answer")
+
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const title = yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const session = yield* sessions.get(chat.id)
+        return isDefaultTitle(session.title) ? undefined : session.title
+      }),
+      "session title was not generated",
+    )
+    expect(title).toBe("E2E Title")
   }),
 )
 

@@ -1228,6 +1228,7 @@ export const layer = Layer.effect(
             break
           }
 
+          step++
           if (step === 1)
             yield* MemoryAuto.applyRuntimeConfig().pipe(Effect.catch(() => Effect.void))
 
