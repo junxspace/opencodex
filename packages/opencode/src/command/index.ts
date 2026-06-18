@@ -10,6 +10,12 @@ import { Skill } from "../skill"
 import { EventV2 } from "@opencode-ai/core/event"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import PROMPT_DREAM from "./template/dream.txt"
+import PROMPT_CHECKPOINT from "./template/checkpoint.txt"
+import PROMPT_DISTILL from "./template/distill.txt"
+import PROMPT_REMEMBER from "./template/remember.txt"
+import { render as renderCheckpoint } from "./checkpoint"
+import { render as renderRemember } from "./remember"
 
 type State = {
   commands: Record<string, Info>
@@ -54,6 +60,10 @@ export function hints(template: string) {
 export const Default = {
   INIT: "init",
   REVIEW: "review",
+  DREAM: "dream",
+  CHECKPOINT: "checkpoint",
+  DISTILL: "distill",
+  REMEMBER: "remember",
 } as const
 
 export interface Interface {
@@ -93,6 +103,48 @@ export const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+      commands[Default.DREAM] = {
+        name: Default.DREAM,
+        description: "consolidate session notes into project MEMORY.md (manual; dream.auto is off by default)",
+        source: "command",
+        agent: "dream",
+        get template() {
+          return PROMPT_DREAM
+        },
+        subtask: true,
+        hints: [],
+      }
+      commands[Default.CHECKPOINT] = {
+        name: Default.CHECKPOINT,
+        description: "write session checkpoint.md snapshot (11-section format)",
+        source: "command",
+        get template() {
+          return renderCheckpoint({ sessionID: "<sessionID>", worktree: ctx.worktree })
+        },
+        subtask: true,
+        hints: hints(PROMPT_CHECKPOINT),
+      }
+      commands[Default.DISTILL] = {
+        name: Default.DISTILL,
+        description: "extract reusable workflows into skills/commands (manual; distill.auto is off by default)",
+        source: "command",
+        agent: "distill",
+        get template() {
+          return PROMPT_DISTILL
+        },
+        subtask: true,
+        hints: [],
+      }
+      commands[Default.REMEMBER] = {
+        name: Default.REMEMBER,
+        description: "save text to project MEMORY.md (default); use --session or --global to override",
+        source: "command",
+        get template() {
+          return renderRemember({ sessionID: "<sessionID>", worktree: ctx.worktree })
+        },
+        subtask: true,
+        hints: hints(PROMPT_REMEMBER),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
@@ -180,5 +232,8 @@ export const defaultLayer = layer.pipe(
 )
 
 export const node = LayerNode.make(layer, [Config.node, MCP.node, Skill.node])
+
+export { render as renderCheckpoint } from "./checkpoint"
+export { render as renderRemember, USAGE as rememberUsage } from "./remember"
 
 export * as Command from "."

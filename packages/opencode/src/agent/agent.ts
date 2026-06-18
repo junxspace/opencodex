@@ -11,6 +11,8 @@ import { ProviderTransform } from "@/provider/transform"
 
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
+import PROMPT_DREAM from "./prompt/dream.txt"
+import PROMPT_DISTILL from "./prompt/distill.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
@@ -105,6 +107,7 @@ export const layer = Layer.effect(
         }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
         const whitelistedDirs = [
           Truncate.GLOB,
+          path.join(Global.Path.data, "memory", "*"),
           path.join(Global.Path.tmp, "*"),
           ...skillDirs.map((dir) => path.join(dir, "*")),
           ...referenceDirs.map((dir) => path.join(dir, "*")),
@@ -259,6 +262,50 @@ export const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_SUMMARY,
+          },
+          dream: {
+            name: "dream",
+            mode: "subagent",
+            native: true,
+            hidden: true,
+            prompt: PROMPT_DREAM,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                write: "allow",
+                edit: "allow",
+                glob: "allow",
+                grep: "allow",
+                memory: "allow",
+                bash: "allow",
+              }),
+              user,
+            ),
+            options: {},
+          },
+          distill: {
+            name: "distill",
+            mode: "subagent",
+            native: true,
+            hidden: true,
+            prompt: PROMPT_DISTILL,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                write: "allow",
+                edit: "allow",
+                glob: "allow",
+                grep: "allow",
+                memory: "allow",
+                bash: "allow",
+              }),
+              user,
+            ),
+            options: {},
           },
         }
 

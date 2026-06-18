@@ -1,0 +1,29 @@
+Write a session checkpoint capturing the current working state.
+
+## Session
+
+- Session ID: `${sessionID}`
+- Checkpoint file: `${checkpointPath}`
+- Optional notes: `${sessionNotesPath}`
+- Project memory (read-only context): `${projectMemoryPath}`
+
+## Focus
+
+$ARGUMENTS
+
+If $ARGUMENTS is empty, capture the full session state from conversation and tool history.
+
+## Do
+
+1. Review the conversation, tool results, and open work in this session.
+2. Use the `memory` tool when helpful. Do not explore memory directories with bash.
+3. Read `${checkpointPath}` if it exists; otherwise create parent directories.
+4. Write or update the checkpoint using the 11-section structure below. Merge with existing content where sections still apply; refresh stale sections.
+5. Keep each section concise. Quote the user's latest request verbatim in §1.
+6. Reply in one short sentence with what was saved and the file path.
+
+## Structure
+
+${checkpointTemplate}
+
+Do not modify project MEMORY.md unless the user explicitly asked. Append-only for notes if you touch `${sessionNotesPath}`.

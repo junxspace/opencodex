@@ -1,0 +1,38 @@
+# Dream Command
+
+Trigger the Dream agent to consolidate session memories into persistent project knowledge.
+
+## Usage
+
+Run this command to analyze recent sessions and update the project's MEMORY.md file with:
+- Discovered durable knowledge
+- Architecture decisions
+- User rules and preferences
+- Patterns and gotchas
+
+The Dream agent will:
+1. Search memory for recent checkpoints and notes
+2. Locate session data in the database
+3. Collect candidate knowledge from memory files
+4. Verify against original session traces
+5. Consolidate into MEMORY.md
+6. Clean up processed notes
+
+## When to run
+
+- After significant coding sessions
+- When switching context between projects
+- Periodically (can be auto-triggered based on configuration)
+
+## Configuration
+
+Configure automatic dreaming in opencode.json:
+
+```json
+{
+  "dream": {
+    "auto": true,
+    "interval_days": 7
+  }
+}
+```

@@ -1,0 +1,24 @@
+Save the note below to persistent memory.
+
+## Note
+
+$ARGUMENTS
+
+## Target
+
+Default to project memory: `${projectMemoryPath}`
+
+Optional scope prefix on the note (strip before saving):
+- `--session` → `${sessionNotesPath}`
+- `--global` → `${globalMemoryPath}`
+
+## Do
+
+1. Parse an optional `--session` or `--global` prefix. Otherwise use the project path above.
+2. Use the `memory` tool when helpful. Do not explore memory directories with bash.
+3. Read the target file if it exists; create parent directories and a minimal heading when missing.
+4. Append one dated bullet: `- (YYYY-MM-DD) <content>`
+5. For project memory, place it under the best section: Rules, Architecture decisions, Discovered durable knowledge, Patterns, Gotchas, or Project context.
+6. Reply in one short sentence with what was saved and the file path.
+
+Append only. Keep entries concise. Do not modify checkpoint files.

@@ -24,7 +24,7 @@ import { ulid } from "ulid"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
-import { Command } from "../command"
+import { Command, renderRemember, rememberUsage, renderCheckpoint } from "../command"
 import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
@@ -49,6 +49,7 @@ import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@opencode-ai/core/database/database"
+import { Memory } from "@opencode-ai/core/memory"
 import { Telemetry } from "@opencode-ai/core/telemetry"
 import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionMessage } from "@opencode-ai/core/session/message"
@@ -59,6 +60,11 @@ import * as DateTime from "effect/DateTime"
 import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
+import { RememberTrigger } from "./remember-trigger"
+import { MemoryAuto } from "./memory-auto"
+import { MemoryContext } from "./memory-context"
+import { AutoDream } from "./auto-dream"
+import { AutoDistill } from "./auto-distill"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 
@@ -1150,7 +1156,13 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
+    const memoryRunners = {
+      enqueueCheckpoint: (_sessionID: SessionID) => Effect.void,
+      spawnDream: (_sessionID: SessionID) => Effect.void,
+      spawnDistill: (_sessionID: SessionID) => Effect.void,
+    }
+
+    const runLoop = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         let structured: unknown
@@ -1216,7 +1228,9 @@ export const layer = Layer.effect(
             break
           }
 
-          step++
+          if (step === 1)
+            yield* MemoryAuto.applyRuntimeConfig().pipe(Effect.catch(() => Effect.void))
+
           if (step === 1)
             yield* title({
               session,
@@ -1245,6 +1259,19 @@ export const layer = Layer.effect(
             continue
           }
 
+          if (lastFinished && lastFinished.summary !== true) {
+            if (
+              MemoryAuto.consumeAutoCheckpoint({
+                sessionID,
+                tokens: lastFinished.tokens,
+                model,
+              })
+            ) {
+              yield* Effect.logInfo("auto checkpoint triggered", { "session.id": sessionID })
+              yield* memoryRunners.enqueueCheckpoint(sessionID).pipe(Effect.catch(() => Effect.void))
+            }
+          }
+
           if (
             lastFinished &&
             lastFinished.summary !== true &&
@@ -1269,6 +1296,11 @@ export const layer = Layer.effect(
             Effect.provideService(FSUtil.Service, fsys),
             Effect.provideService(Session.Service, sessions),
           )
+          msgs = yield* RememberTrigger.applyUserTurn({
+            messages: msgs,
+            agent,
+            sessionID,
+          }).pipe(Effect.catch(() => Effect.succeed(msgs)))
 
           const msg: SessionV1.Assistant = {
             id: MessageID.ascending(),
@@ -1360,13 +1392,14 @@ export const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [skills, env, instructions, modelMsgs] = yield* Effect.all([
+            const [skills, env, instructions, memoryContext, modelMsgs] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
+              MemoryContext.system({ sessionID }).pipe(Effect.catch(() => Effect.succeed(""))),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
-            const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            const system = [...env, ...instructions, ...(skills ? [skills] : []), ...(memoryContext ? [memoryContext] : [])]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
@@ -1401,7 +1434,19 @@ export const layer = Layer.effect(
               }
             }
 
-            if (result === "stop") return "break" as const
+            if (result === "stop") {
+              const fresh = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+                Effect.provideService(Database.Service, database),
+              )
+              const assistantMsg = fresh.find((msg) => msg.info.id === handle.message.id)
+              if (assistantMsg) {
+                yield* RememberTrigger.afterAssistantTurn({
+                  sessionID,
+                  message: assistantMsg,
+                }).pipe(Effect.catch(() => Effect.void))
+              }
+              return "break" as const
+            }
             if (result === "compact") {
               yield* compaction.create({
                 sessionID,
@@ -1421,6 +1466,8 @@ export const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+        yield* memoryRunners.spawnDream(sessionID).pipe(Effect.catch(() => Effect.void), Effect.ignore, Effect.forkIn(scope))
+        yield* memoryRunners.spawnDistill(sessionID).pipe(Effect.catch(() => Effect.void), Effect.ignore, Effect.forkIn(scope))
         return yield* lastAssistant(sessionID)
       },
     )
@@ -1428,7 +1475,11 @@ export const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+      return yield* state.ensureRunning(
+        input.sessionID,
+        lastAssistant(input.sessionID),
+        runLoop(input.sessionID) as Effect.Effect<SessionV1.WithParts>,
+      )
     })
 
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
@@ -1456,7 +1507,19 @@ export const layer = Layer.effect(
 
       const raw = input.arguments.match(argsRegex) ?? []
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
-      const templateCommand = yield* Effect.promise(async () => cmd.template)
+      let templateCommand = yield* Effect.promise(async () => cmd.template)
+
+      if (input.command === Command.Default.REMEMBER) {
+        const ctx = yield* InstanceState.context
+        templateCommand = input.arguments.trim()
+          ? renderRemember({ sessionID: input.sessionID, worktree: ctx.worktree })
+          : rememberUsage
+      }
+
+      if (input.command === Command.Default.CHECKPOINT) {
+        const ctx = yield* InstanceState.context
+        templateCommand = renderCheckpoint({ sessionID: input.sessionID, worktree: ctx.worktree })
+      }
 
       const placeholders = templateCommand.match(placeholderRegex) ?? []
       let last = 0
@@ -1549,6 +1612,7 @@ export const layer = Layer.effect(
         agent: userAgent,
         parts,
         variant: input.variant,
+        noReply: input.noReply,
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
@@ -1558,6 +1622,48 @@ export const layer = Layer.effect(
       })
       return result
     })
+
+    memoryRunners.enqueueCheckpoint = ((sessionID) =>
+      Effect.gen(function* () {
+        const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        yield* command({
+          sessionID,
+          command: Command.Default.CHECKPOINT,
+          arguments: "Auto: context reached 85%. Capture the current session state.",
+          agent: session.agent,
+          noReply: true,
+        }).pipe(Effect.ignore)
+      })) as (sessionID: SessionID) => Effect.Effect<void>
+
+    memoryRunners.spawnDream = ((sessionID) =>
+      Effect.gen(function* () {
+        const shouldRun = yield* AutoDream.spawnDreamAgent(sessionID)
+        if (!shouldRun) return
+        const agentInfo = yield* agents.get("dream").pipe(Effect.catch(() => Effect.succeed(null)))
+        if (!agentInfo) return
+        const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        yield* command({
+          sessionID,
+          command: Command.Default.DREAM,
+          arguments: "",
+          agent: session.agent,
+        }).pipe(Effect.ignore)
+      })) as (sessionID: SessionID) => Effect.Effect<void>
+
+    memoryRunners.spawnDistill = ((sessionID) =>
+      Effect.gen(function* () {
+        const shouldRun = yield* AutoDistill.spawnDistillAgent(sessionID)
+        if (!shouldRun) return
+        const agentInfo = yield* agents.get("distill").pipe(Effect.catch(() => Effect.succeed(null)))
+        if (!agentInfo) return
+        const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        yield* command({
+          sessionID,
+          command: Command.Default.DISTILL,
+          arguments: "",
+          agent: session.agent,
+        }).pipe(Effect.ignore)
+      })) as (sessionID: SessionID) => Effect.Effect<void>
 
     return Service.of({
       cancel,
@@ -1595,6 +1701,7 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.mergeAll(
         Agent.defaultLayer,
         Database.defaultLayer,
+        Memory.defaultLayer,
         SystemPrompt.defaultLayer,
         LLM.defaultLayer,
         CrossSpawnSpawner.defaultLayer,
@@ -1654,6 +1761,7 @@ export const CommandInput = Schema.Struct({
   arguments: Schema.String,
   command: Schema.String,
   variant: Schema.optional(Schema.String),
+  noReply: Schema.optional(Schema.Boolean),
   // Inlined (no identifier annotation) to keep the original SDK output — the
   // PromptInput call site below references FilePartInput by ref via the
   // Schema export in message-v2.ts.

@@ -194,6 +194,65 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  dream: Schema.optional(
+    Schema.Struct({
+      auto: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable automatic dream agent to consolidate memories (default: false; manual /dream only until auto spawn is wired)",
+      }),
+      interval_days: Schema.optional(NonNegativeInt).annotate({
+        description: "Minimum days between automatic dream runs (default: 7)",
+      }),
+    }),
+  ).annotate({ description: "Dream agent configuration for memory consolidation" }),
+  checkpoint: Schema.optional(
+    Schema.Struct({
+      memory_reconcile_on_search: Schema.optional(Schema.Boolean).annotate({
+        description: "Reconcile memory index before search (default: true)",
+      }),
+      memory_search_score_floor: Schema.optional(Schema.Number).annotate({
+        description: "Minimum relative BM25 score ratio to include results (default: 0.15)",
+      }),
+      push_caps: Schema.optional(
+        Schema.Struct({
+          checkpoint: Schema.optional(PositiveInt).annotate({
+            description: "Maximum tokens for checkpoint.md (default: 11000)",
+          }),
+          memory: Schema.optional(PositiveInt).annotate({
+            description: "Maximum tokens for project MEMORY.md (default: 10000)",
+          }),
+          notes: Schema.optional(PositiveInt).annotate({
+            description: "Maximum tokens for session notes.md (default: 6000)",
+          }),
+          global: Schema.optional(PositiveInt).annotate({
+            description: "Maximum tokens for global MEMORY.md (default: 6000)",
+          }),
+        }),
+      ).annotate({ description: "Token limits for memory files pushed to context" }),
+    }),
+  ).annotate({ description: "Checkpoint and memory system configuration" }),
+  distill: Schema.optional(
+    Schema.Struct({
+      auto: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable automatic distill agent to extract reusable workflows (default: false; manual /distill only until auto spawn is wired)",
+      }),
+      interval_days: Schema.optional(NonNegativeInt).annotate({
+        description: "Minimum days between automatic distill runs (default: 30)",
+      }),
+    }),
+  ).annotate({ description: "Distill agent configuration for workflow extraction" }),
+  remember: Schema.optional(
+    Schema.Struct({
+      auto: Schema.optional(Schema.Boolean).annotate({
+        description: "Detect memory-worthy signals in conversation (default: true)",
+      }),
+      suggest: Schema.optional(Schema.Boolean).annotate({
+        description: "Inject system-reminder suggesting /remember when signals are detected (default: true)",
+      }),
+      auto_write: Schema.optional(Schema.Boolean).annotate({
+        description: "Automatically append detected signals to session notes.md (default: false)",
+      }),
+    }),
+  ).annotate({ description: "Automatic memory capture configuration" }),
 }).annotate({ identifier: "Config" })
 
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>

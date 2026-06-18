@@ -1,0 +1,62 @@
+# Distill Command
+
+Trigger the Distill agent to analyze session history and extract reusable workflow patterns.
+
+## Usage
+
+Run this command to analyze recent sessions and create skills, agents, and commands from identified patterns.
+
+The Distill agent will:
+1. Search memory for recent checkpoints and session data
+2. Analyze the last 30 days of session history
+3. Identify repetitive workflow patterns (3+ occurrences)
+4. Generate skills, commands, and agent configs
+5. Validate generated artifacts
+6. Report findings for user review
+
+## When to run
+
+- After noticing repetitive workflows across sessions
+- When you want to automate common task sequences
+- Periodically (can be auto-triggered based on configuration)
+
+## Output
+
+Generated artifacts in `.opencode/`:
+- `skills/<name>.txt` - Workflow skill definitions
+- `commands/<name>.txt` - Command templates
+- `agents/<name>.json` - Agent configurations (optional)
+
+## Configuration
+
+Configure automatic distilling in opencode.json:
+
+```json
+{
+  "distill": {
+    "auto": true,
+    "interval_days": 30
+  }
+}
+```
+
+## Example
+
+After running `/distill`, you might see:
+
+```
+## Distill Report
+
+### Patterns Identified
+- code-review-feedback-fix: 12 occurrences
+- bug-report-investigate-fix: 8 occurrences
+- feature-design-implement-test: 5 occurrences
+
+### Artifacts Generated
+- skills/code-review-workflow.txt
+- commands/fix-bug.txt
+- commands/review-pr.txt
+
+### Recommendations
+- Consider combining fix-bug and review-pr into a unified workflow
+```

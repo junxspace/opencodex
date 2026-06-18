@@ -1,0 +1,9 @@
+The user ran `/remember` without any text.
+
+Reply briefly with usage only. Do not use tools.
+
+```
+/remember <text>                 save to project MEMORY.md (default)
+/remember --session <text>       save to this session only
+/remember --global <text>        save to global memory
+```
