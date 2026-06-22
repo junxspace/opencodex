@@ -906,6 +906,70 @@ describe("session.compaction.process", () => {
     }).pipe(withCompaction({ result: "compact" })),
   )
 
+  itCompaction.instance(
+    "publishes Session.Event.Error when compaction returns compact",
+    Effect.gen(function* () {
+      const events = yield* EventV2Bridge.Service
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const msg = yield* createUserMessage(session.id, "hello")
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const errs: unknown[] = []
+      const done = yield* Deferred.make<void>()
+      const off = yield* events.listen((evt) => {
+        if (evt.type !== SessionNs.Event.Error.type) return Effect.void
+        const data = evt.data as typeof SessionNs.Event.Error.data.Type
+        if (data.sessionID !== session.id || !data.error) return Effect.void
+        errs.push(data.error)
+        Deferred.doneUnsafe(done, Effect.void)
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => off)
+
+      const result = yield* SessionCompaction.use.process({
+        parentID: msg.id,
+        messages: msgs,
+        sessionID: session.id,
+        auto: false,
+      })
+
+      yield* Deferred.await(done).pipe(Effect.timeout("500 millis"))
+      expect(result).toBe("stop")
+      expect(errs).toHaveLength(1)
+      expect(JSON.stringify(errs[0])).toContain("Session too large to compact")
+    }).pipe(withCompaction({ result: "compact" })),
+  )
+
+  itCompaction.instance(
+    "does not publish Session.Event.Error on successful compaction",
+    Effect.gen(function* () {
+      const events = yield* EventV2Bridge.Service
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const msg = yield* createUserMessage(session.id, "hello")
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const errs: unknown[] = []
+      const off = yield* events.listen((evt) => {
+        if (evt.type !== SessionNs.Event.Error.type) return Effect.void
+        const data = evt.data as typeof SessionNs.Event.Error.data.Type
+        if (data.sessionID !== session.id) return Effect.void
+        errs.push(data.error)
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => off)
+
+      const result = yield* SessionCompaction.use.process({
+        parentID: msg.id,
+        messages: msgs,
+        sessionID: session.id,
+        auto: false,
+      })
+
+      expect(result).toBe("continue")
+      expect(errs).toHaveLength(0)
+    }).pipe(withCompaction({ result: "continue" })),
+  )
+
   it.instance(
     "adds synthetic continue prompt when auto is enabled",
     Effect.gen(function* () {

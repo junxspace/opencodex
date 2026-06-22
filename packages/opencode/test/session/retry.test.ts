@@ -162,6 +162,27 @@ describe("session.retry.retryable", () => {
     expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
   })
 
+  test("retries Xunfei NotEnoughCvError concurrency limits", () => {
+    const msg =
+      "Xunfei request failed with Sid: cht000eefff@dx19ee8b50c57b87f332 code: 11210, msg: NotEnoughCvError"
+    const error = wrap(msg)
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
+  })
+
+  test("retries JSON-encoded Xunfei NotEnoughCvError messages", () => {
+    const msg =
+      "Xunfei request failed with Sid: cht000eefff@dx19ee8b50c57b87f332 code: 11210, msg: NotEnoughCvError"
+    const error = wrap(JSON.stringify(msg))
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
+  })
+
+  test("retries Xunfei NotEnoughCvError from plain stream errors", () => {
+    const msg =
+      "Xunfei request failed with Sid: cht000eefff@dx19ee8b50c57b87f332 code: 11210, msg: NotEnoughCvError"
+    const error = MessageV2.fromError(new Error(msg), { providerID })
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
+  })
+
   test("retries transport timeout errors", () => {
     const request = MessageV2.fromError(new ProviderError.HeaderTimeoutError(10000), { providerID })
     expect(SessionV1.APIError.isInstance(request)).toBe(true)

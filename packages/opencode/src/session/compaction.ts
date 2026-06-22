@@ -424,13 +424,16 @@ export const layer = Layer.effect(
       })
 
       if (result === "compact") {
-        processor.message.error = new SessionV1.ContextOverflowError({
+        const error = new SessionV1.ContextOverflowError({
           message: replay
             ? "Conversation history too large to compact - exceeds model context limit"
             : "Session too large to compact - context exceeds model limit even after stripping media",
         }).toObject()
+        processor.message.error = error
         processor.message.finish = "error"
+        processor.message.time.completed = Date.now()
         yield* session.updateMessage(processor.message)
+        yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error })
         return "stop"
       }
 
@@ -525,7 +528,14 @@ export const layer = Layer.effect(
         }
       }
 
-      if (processor.message.error) return "stop"
+      if (processor.message.error) {
+        if (!processor.message.time.completed) {
+          processor.message.time.completed = Date.now()
+          yield* session.updateMessage(processor.message)
+        }
+        yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: processor.message.error })
+        return "stop"
+      }
       if (result === "continue") {
         const summary = summaryText(
           (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(

@@ -27,28 +27,6 @@ function sessionTitle(sessionID: string) {
   return ""
 }
 
-function sessionWasAborted(sessionID: string) {
-  try {
-    const db = new BunSqlite(dbFile(), { readonly: true })
-    const row = db
-      .query(
-        `SELECT json_extract(m.data, '$.error.name') as errorName FROM message m WHERE m.session_id = $id AND json_extract(m.data, '$.role') = 'assistant' ORDER BY m.time_created DESC LIMIT 1`,
-      )
-      .get({ $id: sessionID }) as { errorName: string | null } | null
-    db.close()
-    return row?.errorName === "MessageAbortedError"
-  } catch (err) {
-    log.debug("failed to read session abort state", { err, sessionID })
-    return false
-  }
-}
-
-function cachedSessionWasAborted(sessionID: string, state: SessionNotifyState) {
-  if (state.wasAborted !== undefined) return state.wasAborted
-  state.wasAborted = sessionWasAborted(sessionID)
-  return state.wasAborted
-}
-
 function userMessage(sessionID: string) {
   try {
     const db = new BunSqlite(dbFile(), { readonly: true })
@@ -91,7 +69,6 @@ type SessionNotifyState = {
   wasBusy: boolean
   hadError: boolean
   hadInterrupt: boolean
-  wasAborted?: boolean
 }
 
 const DEFAULT_EVENTS = new Set<NotificationEvent>([
@@ -145,7 +122,6 @@ export function resolveDispatchStatus(sessionID: string, status: string) {
   if (status !== "completed") return status
   const state = sessionStates.get(sessionID)
   if (state?.hadInterrupt) return "interrupted"
-  if (state && cachedSessionWasAborted(sessionID, state)) return "interrupted"
   return status
 }
 
@@ -191,7 +167,6 @@ export function notificationEvent(
   if (type === Session.Event.Error.type) {
     if (state && isAbortError(props.error)) {
       state.hadInterrupt = true
-      state.wasAborted = true
       return null
     }
     if (state) state.hadError = true

@@ -69,6 +69,11 @@ export function retryable(error: Err, provider: string) {
   // context overflow errors should not be retried
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
+    const message = unwrapMessage(error.data.message)
+    if (message) {
+      const xunfei = xunfeiConcurrencyRetry(message)
+      if (xunfei) return xunfei
+    }
     const status = error.data.statusCode
     // 5xx errors are transient server failures and should always be retried,
     // even when the provider SDK doesn't explicitly mark them as retryable.
@@ -123,8 +128,10 @@ export function retryable(error: Err, provider: string) {
   }
 
   // Check for rate limit patterns in plain text error messages
-  const msg = isRecord(error.data) ? error.data.message : undefined
+  const msg = isRecord(error.data) ? unwrapMessage(error.data.message) : undefined
   if (typeof msg === "string") {
+    const xunfei = xunfeiConcurrencyRetry(msg)
+    if (xunfei) return xunfei
     const lower = msg.toLowerCase()
     if (
       lower.includes("rate increased too quickly") ||
@@ -171,6 +178,24 @@ function parseJSON(value: unknown) {
       return undefined
     }
   })
+}
+
+function unwrapMessage(value: unknown) {
+  if (typeof value !== "string") return undefined
+  const parsed = parseJSON(value)
+  return typeof parsed === "string" ? parsed : value
+}
+
+function xunfeiConcurrencyRetry(message: string) {
+  const lower = message.toLowerCase()
+  if (
+    !lower.includes("notenoughcv") &&
+    !lower.includes("code: 11210") &&
+    !lower.includes("code:11210")
+  ) {
+    return undefined
+  }
+  return { message }
 }
 
 export function policy(opts: {

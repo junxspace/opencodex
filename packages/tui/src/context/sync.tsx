@@ -32,6 +32,7 @@ import { useArgs } from "./args"
 import { batch, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
+import { shouldPreferHydratedToolPart } from "../util/session"
 
 const emptyConsoleState: ConsoleState = {
   consoleManagedProviders: [],
@@ -712,7 +713,12 @@ export const {
                   const currentParts = draft.part[message.info.id] ?? []
                   const parts = message.parts.flatMap((part) => {
                     const current = currentParts.find((item) => item.id === part.id)
-                    if (tracker.parts.has(part.id)) return current ? [current] : []
+                    if (tracker.parts.has(part.id)) {
+                      if (current?.type === "tool" && part.type === "tool" && shouldPreferHydratedToolPart(current, part)) {
+                        return [part]
+                      }
+                      return current ? [current] : []
+                    }
                     if (
                       current &&
                       (part.type === "text" || part.type === "reasoning") &&

@@ -65,6 +65,7 @@ export const layer = Layer.effect(
         onIdle: Effect.gen(function* () {
           data.runners.delete(sessionID)
           yield* status.set(sessionID, { type: "idle" })
+          yield* reconcile.reconcileTree(sessionID).pipe(Effect.catch(() => Effect.void))
         }),
         onBusy: status.set(sessionID, { type: "busy" }),
         onInterrupt,

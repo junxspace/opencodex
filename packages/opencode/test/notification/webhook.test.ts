@@ -158,4 +158,85 @@ describe("notification events", () => {
     expect(resolveDispatchStatus("ses_missing", "completed")).toBe("completed")
     expect(resolveDispatchStatus("ses_missing", "interrupted")).toBe("interrupted")
   })
+
+  test("does not upgrade completed using reconcile abort markers in the database", () => {
+    expect(resolveDispatchStatus("ses_after_compaction", "completed")).toBe("completed")
+  })
+
+  test("disabled task_interrupted still allows completed notifications", () => {
+    const item = cfg({
+      enabledEvents: ["task_completed", "task_error"],
+      disabledEvents: ["task_interrupted"],
+    })
+    expect(shouldNotify(item, "task_completed")).toBe(true)
+    expect(shouldNotify(item, "task_interrupted")).toBe(false)
+  })
+
+  test("compaction failure error leads to task_error on idle", () => {
+    const state = { wasBusy: false, hadError: false, hadInterrupt: false }
+    notificationEvent(
+      Session.Event.Error.type,
+      {
+        error: {
+          name: "ContextOverflowError",
+          data: { message: "Session too large to compact - context exceeds model limit even after stripping media" },
+        },
+      },
+      state,
+    )
+    expect(state.hadError).toBe(true)
+    state.wasBusy = true
+    expect(notificationEvent(SessionStatus.Event.Status.type, { status: { type: "idle" } }, state)).toEqual({
+      event: "task_error",
+      status: "error",
+    })
+  })
+
+  test("completed dispatch stays completed when compaction already recorded an error", () => {
+    const state = { wasBusy: false, hadError: false, hadInterrupt: false }
+    notificationEvent(
+      Session.Event.Error.type,
+      {
+        error: {
+          name: "ContextOverflowError",
+          data: { message: "Session too large to compact - context exceeds model limit even after stripping media" },
+        },
+      },
+      state,
+    )
+    state.wasBusy = true
+    expect(notificationEvent(SessionStatus.Event.Status.type, { status: { type: "idle" } }, state)).toEqual({
+      event: "task_error",
+      status: "error",
+    })
+    expect(resolveDispatchStatus("ses_compaction_failed", "error")).toBe("error")
+  })
+
+  test("compaction success leads to task_completed on idle", () => {
+    const state = { wasBusy: false, hadError: false, hadInterrupt: false }
+
+    expect(notificationEvent(SessionStatus.Event.Status.type, { status: { type: "busy" } }, state)).toBeNull()
+    expect(state.wasBusy).toBe(true)
+
+    expect(notificationEvent(SessionStatus.Event.Status.type, { status: { type: "idle" } }, state)).toEqual({
+      event: "task_completed",
+      status: "completed",
+    })
+    expect(resolveDispatchStatus("ses_after_compaction", "completed")).toBe("completed")
+  })
+
+  test("compaction success still notifies completed when task_interrupted is disabled", () => {
+    const item = cfg({
+      enabledEvents: ["task_completed", "task_error", "session_error"],
+      disabledEvents: ["task_interrupted"],
+    })
+    const state = { wasBusy: false, hadError: false, hadInterrupt: false }
+
+    notificationEvent(SessionStatus.Event.Status.type, { status: { type: "busy" } }, state)
+    const result = notificationEvent(SessionStatus.Event.Status.type, { status: { type: "idle" } }, state)
+
+    expect(result).toEqual({ event: "task_completed", status: "completed" })
+    expect(shouldNotify(item, result!.event)).toBe(true)
+    expect(resolveDispatchStatus("ses_after_compaction", result!.status)).toBe("completed")
+  })
 })

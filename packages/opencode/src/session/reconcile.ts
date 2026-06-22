@@ -22,7 +22,7 @@ function staleTool(part: SessionV1.Part): part is SessionV1.ToolPart {
   return part.type === "tool" && (part.state.status === "running" || part.state.status === "pending")
 }
 
-function interruptToolPart(part: SessionV1.ToolPart) {
+export function interruptToolPart(part: SessionV1.ToolPart) {
   const end = Date.now()
   const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
   return {
@@ -60,6 +60,7 @@ export const layer = Layer.effect(
 
       if (last?.info.role !== "assistant" || last.info.time.completed) return
       if (current.type === "busy") return
+      if (last.info.error || last.info.finish === "error") return
 
       yield* sessions.updateMessage({
         ...last.info,

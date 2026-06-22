@@ -16,6 +16,7 @@ import { isOverflow } from "./overflow"
 import { PartID } from "./schema"
 import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
+import { interruptToolPart } from "./reconcile"
 import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
 import type { Provider } from "@/provider/provider"
@@ -930,9 +931,11 @@ export const layer = Layer.effect(
           { concurrency: "unbounded" },
         )
 
+        const handled = new Set<string>()
         for (const toolCallID of Object.keys(ctx.toolcalls)) {
           const match = yield* readToolCall(toolCallID)
           if (!match) continue
+          handled.add(toolCallID)
           const part = match.part
           if (mirrorAssistant && match.call.assistantMessageID) {
             yield* events.publish(SessionEvent.Tool.Failed, {
@@ -944,20 +947,36 @@ export const layer = Layer.effect(
               timestamp: DateTime.makeUnsafe(Date.now()),
             })
           }
-          const end = Date.now()
-          const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
-          yield* session.updatePart({
-            ...part,
-            state: {
-              ...part.state,
-              status: "error",
-              error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
-              time: { start: "time" in part.state ? part.state.time.start : end, end },
-            },
-          })
+          yield* session.updatePart(interruptToolPart(part))
         }
         ctx.toolcalls = {}
+
+        const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
+          Effect.provideService(Database.Service, database),
+        )
+        yield* Effect.forEach(
+          parts.filter(
+            (part): part is SessionV1.ToolPart =>
+              part.type === "tool" &&
+              (part.state.status === "running" || part.state.status === "pending") &&
+              !handled.has(part.callID),
+          ),
+          (part) =>
+            Effect.gen(function* () {
+              if (mirrorAssistant && ctx.v2AssistantMessageID) {
+                yield* events.publish(SessionEvent.Tool.Failed, {
+                  sessionID: ctx.sessionID,
+                  assistantMessageID: ctx.v2AssistantMessageID,
+                  callID: part.callID,
+                  error: { type: "unknown", message: "Tool execution aborted" },
+                  provider: { executed: part.metadata?.providerExecuted === true },
+                  timestamp: DateTime.makeUnsafe(Date.now()),
+                })
+              }
+              yield* session.updatePart(interruptToolPart(part))
+            }),
+          { concurrency: "unbounded", discard: true },
+        )
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
       })
@@ -980,7 +999,6 @@ export const layer = Layer.effect(
             return
           }
           ctx.needsCompaction = true
-          yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
           return
         }
         if (!ctx.assistantMessage.summary) {

@@ -378,11 +378,20 @@ it.live("session.processor effect tests stop after token overflow requests compa
     ({ dir, llm }) =>
       Effect.gen(function* () {
         const database = yield* Database.Service
+        const events = yield* EventV2Bridge.Service
         const { processors, session, provider } = yield* boot()
 
         yield* llm.text("after", { usage: { input: 100, output: 0 } })
 
         const chat = yield* session.create({})
+        const errs: string[] = []
+        const off = yield* events.listen((evt) => {
+          if (evt.type !== Session.Event.Error.type) return Effect.void
+          const data = evt.data as typeof Session.Event.Error.data.Type
+          if (data.sessionID !== chat.id || !data.error) return Effect.void
+          errs.push(data.error.name)
+          return Effect.void
+        })
         const parent = yield* user(chat.id, "compact")
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
         const base = yield* provider.getModel(ref.providerID, ref.modelID)
@@ -410,9 +419,12 @@ it.live("session.processor effect tests stop after token overflow requests compa
           tools: {},
         })
 
+        yield* off
+
         const parts = yield* MessageV2.parts(msg.id)
 
         expect(value).toBe("compact")
+        expect(errs).toHaveLength(0)
         expect(parts.some((part) => part.type === "text" && part.text === "after")).toBe(true)
         expect(parts.some((part) => part.type === "step-finish")).toBe(true)
       }),
@@ -664,11 +676,20 @@ it.live("session.processor effect tests compact on structured context overflow",
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
+        const events = yield* EventV2Bridge.Service
         const { processors, session, provider } = yield* boot()
 
         yield* llm.error(400, { type: "error", error: { code: "context_length_exceeded" } })
 
         const chat = yield* session.create({})
+        const errs: string[] = []
+        const off = yield* events.listen((evt) => {
+          if (evt.type !== Session.Event.Error.type) return Effect.void
+          const data = evt.data as typeof Session.Event.Error.data.Type
+          if (data.sessionID !== chat.id || !data.error) return Effect.void
+          errs.push(data.error.name)
+          return Effect.void
+        })
         const parent = yield* user(chat.id, "compact json")
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
         const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
@@ -695,8 +716,11 @@ it.live("session.processor effect tests compact on structured context overflow",
           tools: {},
         })
 
+        yield* off
+
         expect(value).toBe("compact")
         expect(yield* llm.calls).toBe(1)
+        expect(errs).toHaveLength(0)
         expect(handle.message.error).toBeUndefined()
       }),
     { config: (url) => providerCfg(url) },
@@ -830,6 +854,71 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
           expect(call.state.error).toBe("Tool execution aborted")
           expect(call.state.metadata?.interrupted).toBe(true)
           expect(call.state.time.end).toBeDefined()
+        }
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests abort orphaned pending tools not tracked in memory", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.text("done")
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "orphan cleanup")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: msg.id,
+          sessionID: chat.id,
+          type: "tool",
+          tool: "write",
+          callID: "call_orphan",
+          state: {
+            status: "pending",
+            input: {},
+            raw: "",
+          },
+        })
+
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "orphan cleanup" }],
+          tools: {},
+        })
+
+        const parts = yield* MessageV2.parts(msg.id)
+        const orphan = parts.find(
+          (part): part is SessionV1.ToolPart => part.type === "tool" && part.callID === "call_orphan",
+        )
+
+        expect(orphan?.state.status).toBe("error")
+        if (orphan?.state.status === "error") {
+          expect(orphan.state.error).toBe("Tool execution aborted")
+          expect(orphan.state.metadata?.interrupted).toBe(true)
         }
       }),
     { config: (url) => providerCfg(url) },

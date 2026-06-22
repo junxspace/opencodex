@@ -21,6 +21,11 @@ import { EffectBridge } from "@/effect/bridge"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 
+export function runningToolStart(part: SessionV1.ToolPart) {
+  if (part.state.status === "running" && "time" in part.state) return part.state.time.start
+  return Date.now()
+}
+
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
@@ -56,7 +61,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             metadata: val.metadata,
             status: "running",
             input: args,
-            time: { start: Date.now() },
+            time: { start: runningToolStart(match) },
           },
         }
       }),

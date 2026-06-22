@@ -192,6 +192,54 @@ describe("session.reconcile", () => {
     }),
   )
 
+  it.instance("keeps compaction failure errors instead of marking them aborted", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const reconcile = yield* SessionReconcile.Service
+      const chat = yield* sessions.create({ title: "Compaction failure" })
+      const userID = MessageID.ascending()
+      const assistantID = MessageID.ascending()
+
+      yield* sessions.updateMessage({
+        id: userID,
+        sessionID: chat.id,
+        role: "user",
+        agent: "build",
+        model: { providerID: ref.providerID, modelID: ref.modelID },
+        time: { created: Date.now() },
+      })
+      yield* sessions.updateMessage({
+        id: assistantID,
+        sessionID: chat.id,
+        role: "assistant",
+        parentID: userID,
+        mode: "compaction",
+        agent: "compaction",
+        summary: true,
+        finish: "error",
+        error: new SessionV1.ContextOverflowError({
+          message: "Session too large to compact - context exceeds model limit even after stripping media",
+        }),
+        cost: 0,
+        path: { cwd: "/tmp", root: "/tmp" },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: Date.now() },
+      })
+
+      yield* reconcile.reconcile(chat.id)
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const assistant = messages.at(-1)?.info
+      expect(assistant?.role).toBe("assistant")
+      if (assistant?.role === "assistant") {
+        expect(assistant.error?.name).toBe("ContextOverflowError")
+        expect(assistant.time.completed).toBeUndefined()
+      }
+    }),
+  )
+
   it.instance("skips orphan assistant cleanup while session is busy", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
@@ -232,6 +280,84 @@ describe("session.reconcile", () => {
       expect(assistant?.role).toBe("assistant")
       if (assistant?.role === "assistant") {
         expect(assistant.time.completed).toBeUndefined()
+      }
+    }),
+  )
+
+  it.instance("reconciles stale tools when the runner goes idle", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const reconcile = yield* SessionReconcile.Service
+      const run = yield* SessionRunState.Service
+      const chat = yield* sessions.create({ title: "Idle reconcile" })
+      const userID = MessageID.ascending()
+      const assistantID = MessageID.ascending()
+      const partID = PartID.ascending()
+
+      yield* sessions.updateMessage({
+        id: userID,
+        sessionID: chat.id,
+        role: "user",
+        agent: "build",
+        model: { providerID: ref.providerID, modelID: ref.modelID },
+        time: { created: Date.now() },
+      })
+      yield* sessions.updateMessage({
+        id: assistantID,
+        sessionID: chat.id,
+        role: "assistant",
+        parentID: userID,
+        mode: "build",
+        agent: "build",
+        cost: 0,
+        path: { cwd: "/tmp", root: "/tmp" },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: Date.now() },
+      })
+      yield* sessions.updatePart({
+        id: partID,
+        messageID: assistantID,
+        sessionID: chat.id,
+        type: "tool",
+        tool: "write",
+        callID: "call_orphan",
+        state: {
+          status: "pending",
+          input: {},
+          raw: "",
+        },
+      })
+
+      expect(yield* reconcile.isStale(chat.id)).toBe(true)
+
+      yield* run.ensureRunning(
+        chat.id,
+        Effect.gen(function* () {
+          const msgs = yield* sessions.messages({ sessionID: chat.id }).pipe(Effect.orDie)
+          return msgs.at(-1)!
+        }),
+        Effect.gen(function* () {
+          const msgs = yield* sessions.messages({ sessionID: chat.id }).pipe(Effect.orDie)
+          return msgs.at(-1)!
+        }),
+      )
+
+      expect(yield* reconcile.isStale(chat.id)).toBe(false)
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const part = messages
+        .flatMap((message) => message.parts)
+        .find((item): item is SessionV1.ToolPart => item.type === "tool" && item.id === partID)
+      expect(part?.state.status).toBe("error")
+      if (part?.state.status === "error") {
+        expect(part.state.error).toBe("Tool execution aborted")
+        expect(part.state.metadata?.interrupted).toBe(true)
+      }
+      const assistant = messages.at(-1)?.info
+      expect(assistant?.role).toBe("assistant")
+      if (assistant?.role === "assistant") {
+        expect(assistant.time.completed).toBeNumber()
       }
     }),
   )

@@ -260,3 +260,79 @@ test("a message removed during hydration does not regain stale parts", async () 
     app.renderer.destroy()
   }
 })
+
+test("hydration prefers settled task parts over stale live running state", async () => {
+  await using tmp = await tmpdir()
+  await Bun.write(`${tmp.path}/kv.json`, "{}")
+
+  let resolveMessages!: (response: Response) => void
+  const messages = new Promise<Response>((resolve) => {
+    resolveMessages = resolve
+  })
+  let requested = false
+  const { app, emit, sync } = await mount((url) => {
+    if (url.pathname === `/session/${sessionID}`) return json(session)
+    if (url.pathname === `/session/${sessionID}/message`) {
+      requested = true
+      return messages
+    }
+    if (url.pathname === `/session/${sessionID}/todo` || url.pathname === `/session/${sessionID}/diff`) return json([])
+    return undefined
+  }, tmp.path)
+
+  const taskPart = {
+    id: partID,
+    sessionID,
+    messageID,
+    type: "tool" as const,
+    tool: "task" as const,
+    callID: "call_task",
+    state: {
+      status: "running" as const,
+      input: { description: "Migrate pages", prompt: "go", subagent_type: "general" },
+      metadata: { sessionId: "ses_child" },
+      time: { start: 1 },
+    },
+  }
+
+  try {
+    const hydrate = sync.session.sync(sessionID)
+    await wait(() => requested)
+    emit(global({ id: "evt_message", type: "message.updated", properties: { sessionID, info: assistant } }))
+    emit(
+      global({
+        id: "evt_part",
+        type: "message.part.updated",
+        properties: { sessionID, time: 1, part: taskPart },
+      }),
+    )
+    await wait(() => sync.data.part[messageID]?.[0]?.type === "tool")
+    resolveMessages(
+      json([
+        {
+          info: assistant,
+          parts: [
+            {
+              ...taskPart,
+              state: {
+                ...taskPart.state,
+                status: "error",
+                error: "Tool execution aborted",
+                metadata: { ...taskPart.state.metadata, interrupted: true },
+                time: { start: 1, end: 2 },
+              },
+            },
+          ],
+        },
+      ]),
+    )
+    await hydrate
+
+    expect(sync.data.part[messageID][0]).toMatchObject({
+      type: "tool",
+      state: { status: "error", error: "Tool execution aborted" },
+    })
+  } finally {
+    app.renderer.destroy()
+  }
+})

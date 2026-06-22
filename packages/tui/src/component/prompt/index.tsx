@@ -41,6 +41,7 @@ import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { formatDuration } from "../../util/format"
+import { isSessionBusy } from "../../util/session"
 import { useBusySince, useLiveDuration } from "../../util/live-duration"
 import { createColors, createFrames } from "../../ui/spinner"
 import { useDialog } from "../../ui/dialog"
@@ -165,7 +166,7 @@ export function Prompt(props: PromptProps) {
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
-  const busy = createMemo(() => status().type !== "idle")
+  const busy = createMemo(() => isSessionBusy(status()))
   const busySince = useBusySince(busy)
   const busyDuration = useLiveDuration(busySince, () => undefined, busy)
   const history = usePromptHistory()
@@ -1340,10 +1341,9 @@ export function Prompt(props: PromptProps) {
   })
 
   const spinnerDef = createMemo(() => {
-    const agent =
-      status().type !== "idle"
-        ? (local.agent.list().find((a) => a.name === lastUserMessage()?.agent) ?? local.agent.current())
-        : local.agent.current()
+    const agent = busy()
+      ? (local.agent.list().find((a) => a.name === lastUserMessage()?.agent) ?? local.agent.current())
+      : local.agent.current()
     const color = agent ? local.agent.color(agent.name) : theme.border
     return {
       frames: createFrames({
@@ -1526,7 +1526,7 @@ export function Prompt(props: PromptProps) {
         </Show>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>
-            <Match when={status().type !== "idle"}>
+            <Match when={busy()}>
               <box
                 flexDirection="row"
                 gap={1}

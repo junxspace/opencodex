@@ -39,6 +39,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "../../context/local"
 import { Locale } from "../../util/locale"
+import { isTaskSpinnerActive } from "../../util/session"
 import { webSearchProviderLabel } from "../../util/tool-display"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "../../context/sdk"
@@ -2300,7 +2301,9 @@ function Task(props: ToolProps) {
 
   onMount(() => {
     const sessionID = stringValue(props.metadata.sessionId)
-    if (sessionID && !sync.data.message[sessionID]?.length) void sync.session.sync(sessionID)
+    if (!sessionID) return
+    if (!sync.data.message[sessionID]?.length) void sync.session.sync(sessionID)
+    if (props.part.state.status === "running") void sync.refreshSessionStatus()
   })
 
   const sessionID = createMemo(() => stringValue(props.metadata.sessionId))
@@ -2319,20 +2322,14 @@ function Task(props: ToolProps) {
   )
 
   const status = createMemo(() => sync.data.session_status[sessionID() ?? ""])
-  const isRunning = createMemo(() => {
-    const value = status()
-    const foregroundStale =
-      props.part.state.status === "running" &&
-      props.metadata.background !== true &&
-      value !== undefined &&
-      value.type === "idle"
-    if (foregroundStale) return false
-
-    return (
-      props.part.state.status === "running" ||
-      (props.metadata.background === true && value !== undefined && value.type !== "idle")
-    )
-  })
+  const isRunning = createMemo(() =>
+    isTaskSpinnerActive({
+      partStatus: props.part.state.status,
+      background: props.metadata.background === true,
+      childStatus: status(),
+      childMessages: messages(),
+    }),
+  )
   const retry = createMemo(() => {
     const value = status()
     if (value?.type !== "retry") return
