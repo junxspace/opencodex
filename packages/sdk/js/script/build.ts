@@ -58,61 +58,16 @@ if (sseTypesPatched === sseTypesSource) {
 }
 await Bun.write(sseTypesPath, sseTypesPatched)
 
-// Patch @hey-api/openapi-ts truncating large GlobalEvent.payload unions.
 const typesPath = "./src/v2/gen/types.gen.ts"
 const typesFile = Bun.file(typesPath)
 const typesSource = await typesFile.text()
-const globalEventReplacement = `export type GlobalEventPayload =
-  | Event
-  | SyncEventSessionCreated
-  | SyncEventSessionUpdated
-  | SyncEventSessionDeleted
-  | SyncEventMessageUpdated
-  | SyncEventMessageRemoved
-  | SyncEventMessagePartUpdated
-  | SyncEventMessagePartRemoved
-  | SyncEventSessionNextAgentSwitched
-  | SyncEventSessionNextModelSwitched
-  | SyncEventSessionNextMoved
-  | SyncEventSessionNextPrompted
-  | SyncEventSessionNextPromptAdmitted
-  | SyncEventSessionNextPromptPromoted
-  | SyncEventSessionNextInterruptRequested
-  | SyncEventSessionNextContextUpdated
-  | SyncEventSessionNextSynthetic
-  | SyncEventSessionNextShellStarted
-  | SyncEventSessionNextShellEnded
-  | SyncEventSessionNextStepStarted
-  | SyncEventSessionNextStepEnded
-  | SyncEventSessionNextStepFailed
-  | SyncEventSessionNextTextStarted
-  | SyncEventSessionNextTextEnded
-  | SyncEventSessionNextReasoningStarted
-  | SyncEventSessionNextReasoningEnded
-  | SyncEventSessionNextToolInputStarted
-  | SyncEventSessionNextToolInputEnded
-  | SyncEventSessionNextToolCalled
-  | SyncEventSessionNextToolProgress
-  | SyncEventSessionNextToolSuccess
-  | SyncEventSessionNextToolFailed
-  | SyncEventSessionNextRetried
-  | SyncEventSessionNextCompactionStarted
-  | SyncEventSessionNextCompactionEnded
-
-export type GlobalEvent = {
-  directory: string
-  project?: string
-  workspace?: string
-  payload: GlobalEventPayload
-}`
-const typesPatched = typesSource.replace(
-  /export type GlobalEvent = \{[\s\S]*?\n\}\n\n\/\*\*\n \* Log level/,
-  `${globalEventReplacement}\n\n/**\n * Log level`,
-)
-if (typesPatched === typesSource) {
-  throw new Error(`GlobalEvent patch did not apply; @hey-api/openapi-ts output may have changed (${typesPath})`)
+const typesPatched = typesSource.includes("payload:\n    | Event\n")
+  ? typesSource
+  : typesSource.replace(/\| EventServerInstanceDisposed/, "| Event\n    | EventServerInstanceDisposed")
+if (typesPatched === typesSource && !typesSource.includes("payload:\n    | Event\n")) {
+  throw new Error(`GlobalEvent Event union patch did not apply (${typesPath})`)
 }
-await Bun.write(typesPath, typesPatched)
+if (typesPatched !== typesSource) await Bun.write(typesPath, typesPatched)
 
 await $`bun prettier --write src/gen`
 await $`bun prettier --write src/v2`
