@@ -71,7 +71,7 @@ export function retryable(error: Err, provider: string) {
   if (SessionV1.APIError.isInstance(error)) {
     const message = unwrapMessage(error.data.message)
     if (message) {
-      const xunfei = xunfeiConcurrencyRetry(message)
+      const xunfei = xunfeiStreamRetry(message)
       if (xunfei) return xunfei
     }
     const status = error.data.statusCode
@@ -130,7 +130,7 @@ export function retryable(error: Err, provider: string) {
   // Check for rate limit patterns in plain text error messages
   const msg = isRecord(error.data) ? unwrapMessage(error.data.message) : undefined
   if (typeof msg === "string") {
-    const xunfei = xunfeiConcurrencyRetry(msg)
+    const xunfei = xunfeiStreamRetry(msg)
     if (xunfei) return xunfei
     const lower = msg.toLowerCase()
     if (
@@ -186,15 +186,8 @@ function unwrapMessage(value: unknown) {
   return typeof parsed === "string" ? parsed : value
 }
 
-function xunfeiConcurrencyRetry(message: string) {
-  const lower = message.toLowerCase()
-  if (
-    !lower.includes("notenoughcv") &&
-    !lower.includes("code: 11210") &&
-    !lower.includes("code:11210")
-  ) {
-    return undefined
-  }
+function xunfeiStreamRetry(message: string) {
+  if (!message.toLowerCase().startsWith("xunfei request failed with sid:")) return undefined
   return { message }
 }
 
