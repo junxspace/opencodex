@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { mkdir } from "node:fs/promises"
+import path from "node:path"
 import { createSignal, For, Show } from "solid-js"
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { testRender, type JSX } from "@opentui/solid"
+import { ThemeProvider } from "../../../src/context/theme"
+import { KVProvider } from "../../../src/context/kv"
+import { TuiConfigProvider } from "../../../src/config"
+import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
+import { TestTuiContexts } from "../../fixture/tui-environment"
 import {
   formatCompletedSubagentDetail,
   formatSubagentRetry,
@@ -18,10 +25,12 @@ import {
 } from "../../../src/routes/session"
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined
+let testRoot: string | undefined
 
 afterEach(() => {
   testSetup?.renderer.destroy()
   testSetup = undefined
+  testRoot = undefined
 })
 
 type ToolFixture = { icon: string; label: string; error?: string }
@@ -211,7 +220,33 @@ function FailedCompleteToolFixture() {
 }
 
 async function renderFrame(component: () => JSX.Element, options: { width: number; height: number }) {
-  testSetup = await testRender(component, options)
+  const root = path.join("/tmp", `opencode-inline-tool-wrap-${Date.now()}`)
+  const state = path.join(root, "state")
+  await mkdir(state, { recursive: true })
+  await Bun.write(path.join(state, "kv.json"), "{}")
+  testRoot = root
+  const config = createTuiResolvedConfig()
+  testSetup = await testRender(
+    () => (
+      <TestTuiContexts
+        directory={root}
+        paths={{
+          home: root,
+          state,
+          worktree: root,
+        }}
+      >
+        <TuiConfigProvider config={config}>
+          <KVProvider>
+            <ThemeProvider mode="dark">
+              {component()}
+            </ThemeProvider>
+          </KVProvider>
+        </TuiConfigProvider>
+      </TestTuiContexts>
+    ),
+    options,
+  )
   await testSetup.renderOnce()
   await testSetup.renderOnce()
 
@@ -327,8 +362,30 @@ describe("TUI inline tool wrapping", () => {
   test("updates sticky-bottom geometry when a text separator mounts and unmounts", async () => {
     const [separated, setSeparated] = createSignal(false)
     let scroll: ScrollBoxRenderable | undefined
+    const root = path.join("/tmp", `opencode-inline-tool-wrap-sticky-${Date.now()}`)
+    const state = path.join(root, "state")
+    await mkdir(state, { recursive: true })
+    await Bun.write(path.join(state, "kv.json"), "{}")
+    const config = createTuiResolvedConfig()
     testSetup = await testRender(
-      () => <StickyScrollFixture separated={separated()} scroll={(value) => (scroll = value)} />,
+      () => (
+        <TestTuiContexts
+          directory={root}
+          paths={{
+            home: root,
+            state,
+            worktree: root,
+          }}
+        >
+          <TuiConfigProvider config={config}>
+            <KVProvider>
+              <ThemeProvider mode="dark">
+                <StickyScrollFixture separated={separated()} scroll={(value) => (scroll = value)} />
+              </ThemeProvider>
+            </KVProvider>
+          </TuiConfigProvider>
+        </TestTuiContexts>
+      ),
       {
         width: 72,
         height: 3,
