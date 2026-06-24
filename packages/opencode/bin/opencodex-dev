@@ -1,3 +1,0 @@
-#!/bin/bash
-export OPENCODE_ORIG_CWD="$(pwd)"
-cd "/Users/junx/Workspace/opensource/opencodex/packages/opencode" && bun run --conditions=browser ./src/index.ts "$@"
