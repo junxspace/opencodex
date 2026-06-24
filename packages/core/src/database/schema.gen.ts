@@ -272,6 +272,56 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
+      yield* tx.run(`
+        CREATE TABLE \`telemetry\` (
+          \`id\` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+          \`event\` text NOT NULL,
+          \`distinct_id\` text,
+          \`properties\` text,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`CREATE INDEX \`telemetry_event_idx\` ON \`telemetry\` (\`event\`);`)
+      yield* tx.run(`CREATE INDEX \`telemetry_time_created_idx\` ON \`telemetry\` (\`time_created\`);`)
+      yield* tx.run(`
+        CREATE TABLE \`memory_fts\` (
+          \`id\` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+          \`path\` text NOT NULL UNIQUE,
+          \`scope\` text NOT NULL,
+          \`scope_id\` text NOT NULL DEFAULT '',
+          \`type\` text NOT NULL,
+          \`body\` text NOT NULL,
+          \`fingerprint\` text NOT NULL,
+          \`last_indexed_at\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`CREATE INDEX \`memory_fts_scope_idx\` ON \`memory_fts\` (\`scope\`);`)
+      yield* tx.run(`CREATE INDEX \`memory_fts_scope_id_idx\` ON \`memory_fts\` (\`scope_id\`);`)
+      yield* tx.run(`CREATE INDEX \`memory_fts_type_idx\` ON \`memory_fts\` (\`type\`);`)
+      yield* tx.run(`
+        CREATE VIRTUAL TABLE \`memory_fts_idx\` USING fts5(
+          body,
+          content='memory_fts',
+          content_rowid='id',
+          tokenize='porter unicode61'
+        );
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`memory_fts_insert\` AFTER INSERT ON \`memory_fts\` BEGIN
+          INSERT INTO \`memory_fts_idx\`(\`rowid\`, \`body\`) VALUES (new.\`id\`, new.\`body\`);
+        END;
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`memory_fts_delete\` AFTER DELETE ON \`memory_fts\` BEGIN
+          INSERT INTO \`memory_fts_idx\`(\`memory_fts_idx\`, \`rowid\`, \`body\`) VALUES('delete', old.\`id\`, old.\`body\`);
+        END;
+      `)
+      yield* tx.run(`
+        CREATE TRIGGER \`memory_fts_update\` AFTER UPDATE ON \`memory_fts\` BEGIN
+          INSERT INTO \`memory_fts_idx\`(\`memory_fts_idx\`, \`rowid\`, \`body\`) VALUES('delete', old.\`id\`, old.\`body\`);
+          INSERT INTO \`memory_fts_idx\`(\`rowid\`, \`body\`) VALUES (new.\`id\`, new.\`body\`);
+        END;
+      `)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">
