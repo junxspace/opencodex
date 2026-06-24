@@ -197,8 +197,10 @@ export function Session() {
   const session = createMemo(() => sync.session.get(route.sessionID))
 
   createEffect(() => {
-    const title = Locale.truncate(session()?.title ?? "", 50)
-    setEpilogue(sessionEpilogue({ title, sessionID: session()?.id }))
+    const current = session()
+    if (!current) return
+    const title = Locale.truncate(current.title ?? "", 50)
+    setEpilogue(sessionEpilogue({ title, sessionID: current.id }))
   })
   onCleanup(() => setEpilogue())
   const children = createMemo(() => {

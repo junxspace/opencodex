@@ -238,7 +238,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                 destroyRenderer(renderer)
               }}
             >
-              <EpilogueProvider set={(value) => (exit.epilogue = value)}>
+              <EpilogueProvider set={(value) => value !== undefined && (exit.epilogue = value)}>
                 <ErrorBoundary fallback={(error, reset) => <ErrorComponent error={error} reset={reset} mode={mode} />}>
                   <TuiPathsProvider
                     value={{

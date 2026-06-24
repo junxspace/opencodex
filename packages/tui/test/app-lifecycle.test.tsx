@@ -112,6 +112,10 @@ test("app.exit prints the session epilogue after scoped cleanup", async () => {
     )
 
     await ready
+    for (let attempt = 0; attempt < 50 && calls.session.length === 0; attempt++) {
+      await setup.renderOnce()
+      await Bun.sleep(20)
+    }
     await setup.renderOnce()
     await setup.renderOnce()
     api?.keymap.dispatchCommand("app.exit")
