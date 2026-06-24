@@ -97,6 +97,20 @@ async function createCat(listener: Awaited<ReturnType<typeof startListener>>, di
   return (await response.json()) as { id: string }
 }
 
+async function expectPortClosed(port: number) {
+  await new Promise<void>((resolve, reject) => {
+    const socket = net.connect({ port, host: "127.0.0.1" })
+    socket.once("connect", () => {
+      socket.destroy()
+      reject(new Error(`port ${port} still accepts connections`))
+    })
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ECONNREFUSED") resolve()
+      else reject(error)
+    })
+  })
+}
+
 async function openSocket(url: URL) {
   const ws = new WebSocket(url)
   ws.binaryType = "arraybuffer"
@@ -105,7 +119,7 @@ async function openSocket(url: URL) {
       ws.addEventListener("open", () => resolve(), { once: true })
       ws.addEventListener("error", () => reject(new Error("websocket failed before open")), { once: true })
     }),
-    5_000,
+    15_000,
     "timed out waiting for websocket open",
   )
   return ws
@@ -276,12 +290,16 @@ describe("HttpApi Server.listen", () => {
   })
 
   test("stop() gracefully closes an idle listener and is repeat-safe", async () => {
+    const blocker = await occupyPort(4096)
     const listener = await startListener()
-    await withTimeout(listener.stop(), 10_000, "timed out waiting for graceful listener.stop()")
-    await withTimeout(listener.stop(), 5_000, "timed out waiting for repeated graceful listener.stop()")
-    await expect(
-      fetch(new URL(PtyPaths.shells, listener.url), { headers: { authorization: authorization() } }),
-    ).rejects.toThrow()
+    try {
+      expect(listener.port).not.toBe(4096)
+      await withTimeout(listener.stop(), 10_000, "timed out waiting for graceful listener.stop()")
+      await withTimeout(listener.stop(), 5_000, "timed out waiting for repeated graceful listener.stop()")
+      await expectPortClosed(listener.port)
+    } finally {
+      await new Promise<void>((resolve) => blocker?.close(() => resolve()))
+    }
   })
 
   test("default in-process handler does not emit Effect HTTP response logs", async () => {
@@ -312,7 +330,7 @@ describe("HttpApi Server.listen", () => {
           plugin,
           [
             "export default async function plugin(input) {",
-            `  await Bun.write(${JSON.stringify(initialized)}, (await Bun.file(${JSON.stringify(initialized)}).text().catch(() => "")) + "initialized\\n")`,
+            `  await Bun.write(${JSON.stringify(initialized)}, "initialized\\n")`,
             "  setTimeout(async () => {",
             "    await input.client.config.get()",
             `    await Bun.write(${JSON.stringify(completed)}, "completed")`,

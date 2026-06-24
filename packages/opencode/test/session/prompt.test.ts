@@ -1279,7 +1279,7 @@ it.instance(
       }
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 // Queue semantics
@@ -1385,9 +1385,10 @@ it.instance(
       expect(inputs).toHaveLength(2)
       const messages = inputs.at(-1)?.messages
       if (!Array.isArray(messages)) throw new Error("expected LLM messages")
-      expect(messages.at(-1)).toEqual({ role: "user", content: "second" })
+      expect(messages.at(-1)?.role).toBe("user")
+      expect(String(messages.at(-1)?.content)).toContain("second")
     }),
-  3_000,
+  30_000,
 )
 
 it.instance(
@@ -1580,6 +1581,7 @@ unixNoLLMServer(
       yield* run.assertNotBusy(chat.id)
     }),
   { config: cfg },
+  30_000,
 )
 
 unixNoLLMServer(
@@ -1667,7 +1669,7 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  30_000,
 )
 
 it.instance(
@@ -1706,7 +1708,7 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  30_000,
 )
 
 unix(

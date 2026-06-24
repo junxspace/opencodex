@@ -4,6 +4,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstab
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { Installation } from "../../src/installation"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { NpmConfig } from "@opencode-ai/core/npm-config"
 import { AppProcess } from "@opencode-ai/core/process"
 import { testEffect } from "../lib/effect"
 
@@ -85,8 +86,9 @@ describe("installation", () => {
     ).effect("reads npm versions via registry", () =>
       Effect.gen(function* () {
         const result = yield* Installation.use.latest("npm")
+        const registry = yield* NpmConfig.registry(process.cwd())
         expect(result).toBe("1.5.0")
-        expect(npmCalls).toContain(`https://registry.npmjs.org/opencode-ai/${InstallationChannel}`)
+        expect(npmCalls).toContain(`${registry}/opencode-ai/${InstallationChannel}`)
       }),
     )
 
@@ -99,8 +101,9 @@ describe("installation", () => {
     ).effect("reads bun versions via registry", () =>
       Effect.gen(function* () {
         const result = yield* Installation.use.latest("bun")
+        const registry = yield* NpmConfig.registry(process.cwd())
         expect(result).toBe("1.6.0")
-        expect(bunCalls).toContain(`https://registry.npmjs.org/opencode-ai/${InstallationChannel}`)
+        expect(bunCalls).toContain(`${registry}/opencode-ai/${InstallationChannel}`)
       }),
     )
 
@@ -113,8 +116,9 @@ describe("installation", () => {
     ).effect("reads pnpm versions via registry", () =>
       Effect.gen(function* () {
         const result = yield* Installation.use.latest("pnpm")
+        const registry = yield* NpmConfig.registry(process.cwd())
         expect(result).toBe("1.7.0")
-        expect(pnpmCalls).toContain(`https://registry.npmjs.org/opencode-ai/${InstallationChannel}`)
+        expect(pnpmCalls).toContain(`${registry}/opencode-ai/${InstallationChannel}`)
       }),
     )
 

@@ -6,7 +6,6 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 
 const realLog = await import("@opencode-ai/core/util/log")
-const realAgent = await import("@/agent/agent")
 
 let mockStreamText = "feat(src): add hello world logging"
 
@@ -25,11 +24,6 @@ const defaultGitContext: GitContext = {
 let mockGitContext: GitContext = { ...defaultGitContext }
 let captured: { path: string; selected?: string[] } = { path: "" }
 let input: unknown
-
-mock.module("@/agent/agent", () => ({
-  ...realAgent,
-  Agent: {},
-}))
 
 mock.module("@opencode-ai/core/util/log", () => ({
   ...realLog,
