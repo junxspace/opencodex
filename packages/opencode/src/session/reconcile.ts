@@ -3,6 +3,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
+import { NotFoundError } from "@/storage/storage"
 import { Effect, Layer, Context } from "effect"
 
 export interface Interface {
@@ -43,9 +44,14 @@ export const layer = Layer.effect(
     const sessions = yield* Session.Service
     const status = yield* SessionStatus.Service
 
+    const messagesFor = (sessionID: SessionID) =>
+      sessions.messages({ sessionID }).pipe(
+        Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed([] as SessionV1.WithParts[])),
+      )
+
     const reconcile = Effect.fn("SessionReconcile.reconcile")(function* (sessionID: SessionID) {
       const current = yield* status.get(sessionID)
-      const messages = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const messages = yield* messagesFor(sessionID)
       const stale = messages.flatMap((message) => message.parts.filter(staleTool))
 
       if (stale.length > 0) {
@@ -91,7 +97,7 @@ export const layer = Layer.effect(
     const isStale = Effect.fn("SessionReconcile.isStale")(function* (sessionID: SessionID) {
       const current = yield* status.get(sessionID)
       if (current.type === "busy") return false
-      const messages = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const messages = yield* messagesFor(sessionID)
       return messages.some((message) => message.parts.some(staleTool))
     })
 
