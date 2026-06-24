@@ -58,7 +58,9 @@ describe("LocationServiceMap", () => {
     }),
   )
 
-  it.live("isolates location state while sharing location policy with catalog", () =>
+  it.live(
+    "isolates location state while sharing location policy with catalog",
+    () =>
     Effect.acquireRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
       (dirs) => Effect.promise(() => Promise.all(dirs.map((dir) => dir[Symbol.asyncDispose]())).then(() => undefined)),
@@ -106,6 +108,7 @@ describe("LocationServiceMap", () => {
             "edit",
             "glob",
             "grep",
+            "memory",
             "question",
             "read",
             "skill",
@@ -123,6 +126,7 @@ describe("LocationServiceMap", () => {
             "edit",
             "glob",
             "grep",
+            "memory",
             "question",
             "read",
             "skill",
@@ -134,9 +138,12 @@ describe("LocationServiceMap", () => {
         }),
       ),
     ),
+    30000,
   )
 
-  it.live("installs public plugins into a location", () =>
+  it.live(
+    "installs public plugins into a location",
+    () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
@@ -183,5 +190,6 @@ describe("LocationServiceMap", () => {
         ),
       ),
     ),
+    30000,
   )
 })

@@ -227,7 +227,10 @@ describeWatcher("Watcher", () => {
           yield* ready(directory)
           yield* Effect.promise(() => $`git branch ${branch}`.cwd(directory).quiet())
           expect(
-            yield* nextUpdate((event) => event.file === head, fs.writeFileString(head, `ref: refs/heads/${branch}\n`)),
+            yield* eventuallyUpdate(
+              (event) => event.file === head && event.event === "change",
+              () => fs.writeFileString(head, `ref: refs/heads/${branch}\n`),
+            ),
           ).toEqual({
             file: head,
             event: "change",
