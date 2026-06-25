@@ -18,15 +18,15 @@
 
 ## 1. 本地安装与开发环境
 
-新增根目录脚本 `install-opencodex.sh`，一键完成开发环境搭建：
+新增根目录脚本 `install-opencode.sh`，一键完成开发环境搭建：
 
 - 执行 `bun install --ignore-scripts` 安装依赖
-- 生成 `packages/opencode/bin/opencodex-dev` 包装脚本，启动前设置 `OPENCODE_ORIG_CWD` 为调用时的工作目录
-- 在 `~/bin` 创建 `opencodex` 与 `ox` 软链接
+- 生成 `packages/opencode/bin/opencode-dev` 包装脚本，启动前设置 `OPENCODE_ORIG_CWD` 为调用时的工作目录
+- 在 `~/bin` 创建 `opencode` 与 `oc` 软链接
 
 ```bash
-./install-opencodex.sh
-opencodex   # 或 ox
+./install-opencode.sh
+opencode   # 或 oc
 ```
 
 开发版本号格式为 `dev-{version}+{sha}`（见 `packages/core/src/installation/source-version.ts`），便于区分源码构建与发布版本。
@@ -53,7 +53,7 @@ opencodex   # 或 ox
 ### CLI
 
 ```bash
-opencodex telemetry web [--port 4312] [--hostname 127.0.0.1] [--interval 2000] [--open]
+opencode telemetry web [--port 4312] [--hostname 127.0.0.1] [--interval 2000] [--open]
 ```
 
 - 默认在 `http://127.0.0.1:4312` 启动仪表盘
@@ -75,7 +75,7 @@ opencodex telemetry web [--port 4312] [--hostname 127.0.0.1] [--interval 2000] [
 ### CLI 命令
 
 ```bash
-opencodex commit [options]
+opencode commit [options]
 ```
 
 | 选项 | 说明 |
@@ -159,7 +159,7 @@ opencodex commit [options]
 
 ### 接入
 
-`opencodex serve` 与 TUI worker 启动时自动调用 `setupNotification()`。
+`opencode serve` 与 TUI worker 启动时自动调用 `setupNotification()`。
 
 ---
 
@@ -170,7 +170,7 @@ opencodex commit [options]
 MCP 服务器可配置 `lazy: true`，启动时不连接，状态为 `idle`，仅在以下时机按需连接：
 
 - `mcp_connect` 工具调用
-- `opencodex mcp connect <name>` CLI
+- `opencode mcp connect <name>` CLI
 - TUI `/mcp connect` 命令
 
 适用于工具较多或不常使用的 MCP 服务，减少启动开销。
@@ -300,7 +300,7 @@ TUI 全面更新品牌标识：
 
 ## 9. 工作目录修复（OPENCODE_ORIG_CWD）
 
-**问题：** 通过 `opencodex-dev` 启动时，进程 `cwd` 被切换到 `packages/opencode`，导致 TUI 线程目录解析错误。
+**问题：** 通过 `opencode-dev` 启动时，进程 `cwd` 被切换到 `packages/opencode`，导致 TUI 线程目录解析错误。
 
 **修复：**
 
@@ -369,9 +369,9 @@ TUI 全面更新品牌标识：
 ```mermaid
 flowchart TB
     subgraph CLI
-        commit[opencodex commit]
-        telemetry[opencodex telemetry web]
-        tui[opencodex / ox TUI]
+        commit[opencode commit]
+        telemetry[opencode telemetry web]
+        tui[opencode / oc TUI]
     end
 
     subgraph Core
@@ -607,7 +607,7 @@ Session 状态快照系统，在 token 越界或手动触发时保存当前工�
 /dream
 
 # 或 CLI
-opencodex dream
+opencode dream
 ```
 
 ---
@@ -667,7 +667,7 @@ opencodex dream
 /distill
 
 # 或 CLI
-opencodex distill
+opencode distill
 ```
 
 ### 输出示例
