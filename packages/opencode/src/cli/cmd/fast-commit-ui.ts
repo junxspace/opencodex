@@ -151,7 +151,7 @@ export function commitUi(style: CliStyle) {
       if (push === "skipped" && count > 0) {
         lines.push(
           styled(
-            `${style.TEXT_DIM}  💡 运行 ${style.TEXT_INFO_BOLD}git push${style.TEXT_DIM} 或 ${style.TEXT_INFO_BOLD}ox fast-commit-and-push${style.TEXT_DIM} 推送到远程${style.TEXT_NORMAL}`,
+            `${style.TEXT_DIM}  💡 运行 ${style.TEXT_INFO_BOLD}git push${style.TEXT_DIM} 或 ${style.TEXT_INFO_BOLD}oc fast-commit-and-push${style.TEXT_DIM} 推送到远程${style.TEXT_NORMAL}`,
           ),
         )
       }
