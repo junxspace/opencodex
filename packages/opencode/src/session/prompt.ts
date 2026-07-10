@@ -1194,6 +1194,18 @@ export const layer = Layer.effect(
 
     const runLoop = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
+        let breakAfterCheckpoint = false
+        const maybeAutoCheckpoint = (tokens: SessionV1.Assistant["tokens"], checkpointModel: Provider.Model) =>
+          Effect.gen(function* () {
+            if (!MemoryAuto.consumeAutoCheckpoint({ sessionID, tokens, model: checkpointModel })) return false
+            yield* Effect.logInfo("auto checkpoint triggered", { "session.id": sessionID })
+            yield* memoryRunners.enqueueCheckpoint(sessionID).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("auto checkpoint enqueue failed", { "session.id": sessionID, cause }),
+              ),
+            )
+            return true
+          })
         const ctx = yield* InstanceState.context
         let structured: unknown
         let step = 0
@@ -1275,6 +1287,7 @@ export const layer = Layer.effect(
 
           if (task?.type === "subtask") {
             yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+            if (breakAfterCheckpoint && task.command === Command.Default.CHECKPOINT) break
             continue
           }
 
@@ -1288,19 +1301,6 @@ export const layer = Layer.effect(
             })
             if (result === "stop") break
             continue
-          }
-
-          if (lastFinished && lastFinished.summary !== true) {
-            if (
-              MemoryAuto.consumeAutoCheckpoint({
-                sessionID,
-                tokens: lastFinished.tokens,
-                model,
-              })
-            ) {
-              yield* Effect.logInfo("auto checkpoint triggered", { "session.id": sessionID })
-              yield* memoryRunners.enqueueCheckpoint(sessionID).pipe(Effect.catch(() => Effect.void))
-            }
           }
 
           if (
@@ -1546,6 +1546,12 @@ export const layer = Layer.effect(
                   message: assistantMsg,
                 }).pipe(Effect.catch(() => Effect.void))
               }
+              if (handle.message.summary !== true) {
+                if (yield* maybeAutoCheckpoint(handle.message.tokens, model)) {
+                  breakAfterCheckpoint = true
+                  return "continue" as const
+                }
+              }
               return "break" as const
             }
             if (result === "compact") {
@@ -1556,6 +1562,9 @@ export const layer = Layer.effect(
                 auto: true,
                 overflow: !handle.message.finish,
               })
+            }
+            if (handle.message.summary !== true) {
+              yield* maybeAutoCheckpoint(handle.message.tokens, model)
             }
             return "continue" as const
           }).pipe(
@@ -1739,7 +1748,11 @@ export const layer = Layer.effect(
           arguments: "Auto: context reached 85%. Capture the current session state.",
           agent: session.agent,
           noReply: true,
-        }).pipe(Effect.ignore)
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("auto checkpoint command failed", { "session.id": sessionID, cause }),
+          ),
+        )
       })) as (sessionID: SessionID) => Effect.Effect<void>
 
     memoryRunners.spawnDream = ((sessionID) =>

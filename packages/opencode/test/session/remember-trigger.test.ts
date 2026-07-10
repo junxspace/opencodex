@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
+import fs from "fs/promises"
+import path from "path"
 import { Memory } from "@opencode-ai/core/memory"
 import { Database } from "@opencode-ai/core/database/database"
 import { DatabaseMigration } from "@opencode-ai/core/database/migration"
@@ -81,17 +83,24 @@ describe("RememberTrigger", () => {
       const { db } = yield* Database.Service
       yield* DatabaseMigration.applyOnly(db, [memoryFtsMigration])
 
-      const sessionID = "ses_remember_auto"
-      const notesPath = yield* RememberTrigger.appendNote(sessionID, "test auto note")
-      expect(notesPath).toBe(MemoryPaths.notesPath(sessionID))
+      const sessionID = "ses_remember_auto_" + Date.now()
+      const notesPath = MemoryPaths.notesPath(sessionID)
 
-      const body = yield* Effect.promise(() => Bun.file(notesPath).text())
-      expect(body).toContain("# Session notes")
-      expect(body).toContain("test auto note")
+      yield* Effect.ensuring(
+        Effect.gen(function* () {
+          const writtenPath = yield* RememberTrigger.appendNote(sessionID, "test auto note")
+          expect(writtenPath).toBe(notesPath)
 
-      const memory = yield* Memory.Service
-      const indexed = yield* memory.get(notesPath)
-      expect(indexed?.body).toContain("test auto note")
+          const body = yield* Effect.promise(() => Bun.file(notesPath).text())
+          expect(body).toContain("# Session notes")
+          expect(body).toContain("test auto note")
+
+          const memory = yield* Memory.Service
+          const indexed = yield* memory.get(notesPath)
+          expect(indexed?.body).toContain("test auto note")
+        }),
+        Effect.tryPromise(() => fs.rm(path.dirname(notesPath), { recursive: true, force: true })),
+      )
     }),
   )
 

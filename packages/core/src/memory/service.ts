@@ -3,6 +3,7 @@ import fs from "fs/promises"
 import { Effect, Context, Layer } from "effect"
 import { sql, eq } from "drizzle-orm"
 import { Database } from "../database/database"
+import { Flag } from "../flag/flag"
 import { MemoryFtsTable, MemoryFtsConfig, type Scope, type MemoryType } from "./sql"
 import * as SearchConfig from "./search-config"
 import * as Paths from "./paths"
@@ -35,6 +36,8 @@ export interface IndexEntry {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Memory") {}
 
+let startupReconcileStarted = false
+
 export interface Interface {
   search: (args: SearchArgs) => Effect.Effect<SearchResult[], unknown>
   index: (entry: IndexEntry) => Effect.Effect<void, unknown>
@@ -45,13 +48,39 @@ export interface Interface {
   writeBody: (path: string, body: string) => Effect.Effect<void, unknown>
 }
 
-function buildFtsQuery(input: string): string {
-  const tokens = input
-    .replace(/[^\w\s]/g, " ")
+function queryTerms(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed) return [] as string[]
+
+  const tokens = trimmed
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
     .filter((t) => t.length > 0)
+  if (tokens.length > 0) return tokens
+
+  return [trimmed.replace(/\s+/g, "")]
+}
+
+function buildFtsQuery(input: string): string {
+  const tokens = queryTerms(input)
   if (tokens.length === 0) return ""
-  return tokens.map((t) => `"${t}"`).join(" OR ")
+  return tokens.map((t) => `"${t.replace(/"/g, '""')}"`).join(" OR ")
+}
+
+function snippetFromBody(body: string, query: string) {
+  const terms = queryTerms(query)
+  const lower = body.toLowerCase()
+  const match = terms
+    .map((term) => lower.indexOf(term.toLowerCase()))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0]
+  const start = match === undefined ? 0 : Math.max(0, match - 12)
+  const maxChars = MemoryFtsConfig.snippetSize * 4
+  const excerpt = body.slice(start, start + maxChars).trim()
+  if (!excerpt) return ""
+  const prefix = start > 0 ? "..." : ""
+  const suffix = start + maxChars < body.length ? "..." : ""
+  return `${prefix}${excerpt}${suffix}`
 }
 
 export const layer = Layer.effect(
@@ -77,9 +106,10 @@ export const layer = Layer.effect(
       const whereClause = conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""
       const fetchLimit = Math.min(limit * 3, 50)
 
+      const excerptChars = MemoryFtsConfig.snippetSize * 16
       const querySql = `
         SELECT memory_fts.path, memory_fts.scope, memory_fts.scope_id, memory_fts.type,
-               snippet(memory_fts_idx, 0, '<<', '>>', '...', ${MemoryFtsConfig.snippetSize}) AS snippet,
+               substr(memory_fts.body, 1, ${excerptChars}) AS body_excerpt,
                bm25(memory_fts_idx) AS score
         FROM memory_fts_idx
         JOIN memory_fts ON memory_fts.id = memory_fts_idx.rowid
@@ -93,7 +123,7 @@ export const layer = Layer.effect(
         scope: Scope
         scope_id: string
         type: MemoryType
-        snippet: string
+        body_excerpt: string
         score: number
       }>(sql.raw(querySql))
 
@@ -102,7 +132,7 @@ export const layer = Layer.effect(
         scope: r.scope,
         scopeId: r.scope_id,
         type: r.type,
-        snippet: r.snippet,
+        snippet: snippetFromBody(r.body_excerpt, args.query),
         score: -r.score,
       }))
 
@@ -241,7 +271,20 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ search, index, remove, reconcile, get, readBody, writeBody })
+    const service = Service.of({ search, index, remove, reconcile, get, readBody, writeBody })
+
+    if (Flag.OPENCODE_DB !== ":memory:" && !startupReconcileStarted) {
+      startupReconcileStarted = true
+      yield* reconcile().pipe(
+        Effect.catchCause((cause) => {
+          startupReconcileStarted = false
+          return Effect.logWarning("memory reconcile failed at startup", { cause })
+        }),
+        Effect.forkScoped,
+      )
+    }
+
+    return service
   }),
 )
 

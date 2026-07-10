@@ -57,6 +57,26 @@ describe("Memory Service", () => {
       const results = yield* svc.search({ query: "test content", limit: 5 })
       expect(results.length).toBeGreaterThanOrEqual(1)
       expect(results[0]?.path).toBe(entry.path)
+      expect(results[0]?.snippet).toContain("test content")
+    }),
+  )
+
+  it.effect("returns Chinese snippets for Chinese queries", () =>
+    Effect.gen(function* () {
+      yield* withMemoryFts
+      const svc = yield* Memory.Service
+      const entry = {
+        path: "/test/chinese.md",
+        scope: "projects" as const,
+        scopeId: "proj-zh",
+        type: "memory" as const,
+        body: "记住 DataTable 列要对齐 th 而不是 td",
+        fingerprint: "1",
+      }
+
+      yield* svc.index(entry)
+      const results = yield* svc.search({ query: "DataTable 列对齐", limit: 3 })
+      expect(results[0]?.snippet).toContain("DataTable")
     }),
   )
 

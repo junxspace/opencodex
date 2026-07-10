@@ -1560,6 +1560,8 @@ describe("session.message-v2.latest", () => {
   const SUMMARY_ASSISTANT = MessageID.make("msg_004")
   const CONTINUE_USER = MessageID.make("msg_005")
   const NEW_COMPACTION_USER = MessageID.make("msg_006")
+  const CHECKPOINT_USER = MessageID.make("msg_008")
+  const FINISHED_ASSISTANT = MessageID.make("msg_007")
 
   const tailUser: SessionV1.WithParts = {
     info: userInfo(TAIL_USER),
@@ -1657,5 +1659,66 @@ describe("session.message-v2.latest", () => {
     expect(state.user?.id).toBe(NEW_COMPACTION_USER)
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
+  })
+
+  test("auto checkpoint subtask is ignored when queued before the finished assistant", () => {
+    const finishedAssistant: SessionV1.WithParts = {
+      info: {
+        ...assistantInfo(FINISHED_ASSISTANT, TAIL_USER),
+        finish: "stop",
+        tokens: { input: 850, output: 0, reasoning: 0, cache: { read: 0, write: 0 }, total: 850 },
+      } as SessionV1.Assistant,
+      parts: [],
+    }
+    const checkpointBeforeAssistant: SessionV1.WithParts = {
+      info: userInfo(MessageID.make("msg_006")),
+      parts: [
+        {
+          ...basePart(MessageID.make("msg_006"), "p1"),
+          type: "subtask",
+          agent: "build",
+          description: "checkpoint",
+          command: "checkpoint",
+          model: { providerID, modelID: model.id },
+          prompt: "Auto checkpoint",
+        },
+      ] as SessionV1.Part[],
+    }
+
+    const state = MessageV2.latest([checkpointBeforeAssistant, finishedAssistant])
+
+    expect(state.finished?.id).toBe(FINISHED_ASSISTANT)
+    expect(state.tasks).toEqual([])
+  })
+
+  test("auto checkpoint subtask surfaces when queued after the finished assistant", () => {
+    const finishedAssistant: SessionV1.WithParts = {
+      info: {
+        ...assistantInfo(FINISHED_ASSISTANT, TAIL_USER),
+        finish: "stop",
+        tokens: { input: 850, output: 0, reasoning: 0, cache: { read: 0, write: 0 }, total: 850 },
+      } as SessionV1.Assistant,
+      parts: [],
+    }
+    const checkpointAfterAssistant: SessionV1.WithParts = {
+      info: userInfo(CHECKPOINT_USER),
+      parts: [
+        {
+          ...basePart(CHECKPOINT_USER, "p1"),
+          type: "subtask",
+          agent: "build",
+          description: "checkpoint",
+          command: "checkpoint",
+          model: { providerID, modelID: model.id },
+          prompt: "Auto checkpoint",
+        },
+      ] as SessionV1.Part[],
+    }
+
+    const state = MessageV2.latest([finishedAssistant, checkpointAfterAssistant])
+
+    expect(state.finished?.id).toBe(FINISHED_ASSISTANT)
+    expect(state.tasks).toHaveLength(1)
+    expect(state.tasks[0]).toMatchObject({ type: "subtask", command: "checkpoint" })
   })
 })
