@@ -174,7 +174,6 @@ export function Prompt(props: PromptProps) {
   const keymap = useOpencodeKeymap()
   const slashCommands = useSlashCommandLookup()
   const agentShortcut = useCommandShortcut("agent.cycle")
-  const paletteShortcut = useCommandShortcut("command.palette.show")
   const renderer = useRenderer()
   const exit = useExit()
   const dimensions = useTerminalDimensions()
@@ -1660,7 +1659,7 @@ export function Prompt(props: PromptProps) {
             <Match when={true}>{props.hint ?? <text />}</Match>
           </Switch>
           <Show when={status().type !== "retry"}>
-            <box gap={2} flexDirection="row">
+            <box gap={2} flexDirection="row" flexGrow={1} justifyContent="flex-end">
               <Show when={editorContextLabelState() !== "none" ? editorFileLabelDisplay() : undefined}>
                 {(file) => (
                   <text fg={editorContextLabelState() === "pending" ? theme.secondary : theme.textMuted}>{file()}</text>
@@ -1682,9 +1681,6 @@ export function Prompt(props: PromptProps) {
                       </text>
                     </Match>
                   </Switch>
-                  <text fg={theme.text}>
-                    {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
-                  </text>
                 </Match>
                 <Match when={store.mode === "shell"}>
                   <text fg={theme.text}>
