@@ -834,7 +834,7 @@ function createLayer(input: StreamInput) {
         }
 
         const complete = Effect.fn("RunStreamTransport.complete")(function* (next: Wait, fallback: boolean) {
-          if (state.wait !== next || !next.armed || !next.live) {
+          if (state.wait !== next || !next.armed) {
             return
           }
 
@@ -861,6 +861,7 @@ function createLayer(input: StreamInput) {
             return
           }
 
+          next.live = true
           yield* complete(next, true)
         })
 

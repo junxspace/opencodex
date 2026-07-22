@@ -2107,6 +2107,45 @@ describe("run stream transport", () => {
     }
   })
 
+  test("completes turn via status polling when no assistant message events arrive", async () => {
+    const src = eventFeed()
+    const ui = footer()
+    let busy = true
+    const transport = await createSessionTransport({
+      sdk: sdk({
+        stream: src.stream,
+        promptAsync: async () => {
+          queueMicrotask(() => {
+            busy = false
+          })
+          return ok(undefined)
+        },
+        status: async () => ok(statusMap(busy)),
+      }),
+      sessionID: "session-1",
+      thinking: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      await Promise.race([
+        transport.runPromptTurn({
+          agent: undefined,
+          model: undefined,
+          variant: undefined,
+          prompt: { text: "hello", parts: [] },
+          files: [],
+          includeFiles: false,
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("turn timed out")), 1_000)),
+      ])
+    } finally {
+      src.close()
+      await transport.close()
+    }
+  })
+
   test("flushes interrupted output when the active turn aborts", async () => {
     const src = eventFeed()
     const seen = defer()
