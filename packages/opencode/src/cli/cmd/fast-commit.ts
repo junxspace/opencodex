@@ -11,7 +11,7 @@ import { invocationDirectory } from "../invocation-directory"
 import { analyzeIntents, type CommitIntent } from "@/commit-message/analyze-intents"
 import { generateCommitMessage } from "@/commit-message"
 import { briefLockMessage, partitionLockFiles } from "@/commit-message/lock"
-import { isLockFile } from "@/commit-message/git-context"
+import { isLockFile, parsePorcelainPath, pathsForGitAdd } from "@/commit-message/git-context"
 import { FAST_COMMIT_SYSTEM_PROMPT } from "@/commit-message/prompt"
 import type { CommitMessageRequest } from "@/commit-message/types"
 
@@ -74,11 +74,18 @@ export function parseStatus(text: string): Status {
   const staged = new Set<string>()
   const unstaged = new Set<string>()
   const untracked = new Set<string>()
+  const related = new Set<string>()
+  const renames: Record<string, string[]> = {}
   for (const line of text.split("\n")) {
     if (!line) continue
     const code = line.slice(0, 2)
-    const path = line.slice(3)
-    if (!path) continue
+    const raw = line.slice(3)
+    if (!raw) continue
+    const { path, paths } = parsePorcelainPath(raw)
+    if (paths.length > 1) {
+      related.add(paths[0]!)
+      renames[path] = paths
+    }
     if (code === "??") {
       untracked.add(path)
       continue
@@ -90,7 +97,13 @@ export function parseStatus(text: string): Status {
     staged: [...staged],
     unstaged: [...unstaged],
     untracked: [...untracked],
+    related: [...related],
+    renames,
   }
+}
+
+function pathsForIntentAdd(files: string[], status: Status) {
+  return [...new Set(files.flatMap((file) => status.renames[file] ?? pathsForGitAdd([file])))]
 }
 
 function empty(status: Status) {
@@ -98,7 +111,7 @@ function empty(status: Status) {
 }
 
 function allFiles(status: Status) {
-  return [...new Set([...status.staged, ...status.unstaged, ...status.untracked])]
+  return [...new Set([...status.staged, ...status.unstaged, ...status.untracked, ...status.related])]
 }
 
 export function selectedFiles(status: Status, stagedOnly?: boolean) {
@@ -246,7 +259,7 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     }
 
     if (!args.dryRun) {
-      const result = run(["add", ...intent.files], root)
+      const result = run(["add", ...pathsForIntentAdd(intent.files, status)], root)
       if (!check(result, error, exit)) return { commitCount, pushed: false, pushFailed: false }
     }
 

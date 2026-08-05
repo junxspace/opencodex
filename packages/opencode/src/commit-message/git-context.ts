@@ -91,6 +91,18 @@ export function git(args: string[], cwd: string) {
   return result.stdout.toString().trimEnd()
 }
 
+export function parsePorcelainPath(raw: string) {
+  const arrow = raw.indexOf(" -> ")
+  if (arrow === -1) return { path: raw, paths: [raw] }
+  const oldPath = raw.slice(0, arrow)
+  const newPath = raw.slice(arrow + 4)
+  return { path: newPath, paths: [oldPath, newPath] }
+}
+
+export function pathsForGitAdd(files: string[]) {
+  return [...new Set(files.flatMap((file) => parsePorcelainPath(file).paths))]
+}
+
 export function parseNameStatus(output: string) {
   if (!output) return []
   return output.split("\n").map((line) => {
@@ -112,8 +124,8 @@ export function parsePorcelain(output: string) {
     .filter((line) => line.length > 0)
     .map((line) => {
       const xy = line.slice(0, 2)
-      const filepath = line.slice(3)
-      return { status: xy.trim(), path: filepath }
+      const { path } = parsePorcelainPath(line.slice(3))
+      return { status: xy.trim(), path }
     })
 }
 

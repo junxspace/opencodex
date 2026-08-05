@@ -1,9 +1,28 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
 import { tmpdir } from "../fixture/fixture"
-import { getGitContext, MAX_TOTAL_DIFF_LENGTH } from "@/commit-message/git-context"
+import { getGitContext, MAX_TOTAL_DIFF_LENGTH, parsePorcelainPath, pathsForGitAdd } from "@/commit-message/git-context"
 
 describe("commit-message.git-context", () => {
+  test("parsePorcelainPath splits rename paths from porcelain output", () => {
+    expect(parsePorcelainPath("old/icon.png -> new/icon.png")).toEqual({
+      path: "new/icon.png",
+      paths: ["old/icon.png", "new/icon.png"],
+    })
+    expect(parsePorcelainPath("src/a.ts")).toEqual({
+      path: "src/a.ts",
+      paths: ["src/a.ts"],
+    })
+  })
+
+  test("pathsForGitAdd expands rename paths for git add", () => {
+    expect(pathsForGitAdd(["old/icon.png -> new/icon.png", "src/a.ts"])).toEqual([
+      "old/icon.png",
+      "new/icon.png",
+      "src/a.ts",
+    ])
+  })
+
   test("caps total diff content across many files", async () => {
     await using tmp = await tmpdir({ git: true })
     const fileCount = 60

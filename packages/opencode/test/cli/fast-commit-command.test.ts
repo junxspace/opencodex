@@ -15,6 +15,94 @@ describe("fast-commit", () => {
     expect(selectedFiles(status, true)).toEqual(["staged.ts"])
   })
 
+  test("parseStatus normalizes porcelain rename paths to the destination file", () => {
+    const status = parseStatus("R  aether-mse-web/app/apple-icon.png -> aether-mse-server/src/main/resources/static/apple-icon.png\n")
+    expect(status.staged).toEqual(["aether-mse-server/src/main/resources/static/apple-icon.png"])
+    expect(status.related).toEqual(["aether-mse-web/app/apple-icon.png"])
+    expect(status.renames).toEqual({
+      "aether-mse-server/src/main/resources/static/apple-icon.png": [
+        "aether-mse-web/app/apple-icon.png",
+        "aether-mse-server/src/main/resources/static/apple-icon.png",
+      ],
+    })
+    expect(selectedFiles(status)).toEqual([
+      "aether-mse-server/src/main/resources/static/apple-icon.png",
+      "aether-mse-web/app/apple-icon.png",
+    ])
+  })
+
+  test("commits staged renames without passing the porcelain arrow path to git add", async () => {
+    const calls: string[] = []
+    await handleFastCommit({
+      dir: "/repo",
+      git: (args) => {
+        calls.push(args.join(" "))
+        if (args.join(" ") === "status --porcelain") {
+          return {
+            code: 0,
+            stdout: "R  old/icon.png -> new/icon.png\n",
+            stderr: "",
+          }
+        }
+        if (args.join(" ") === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" }
+        return { code: 0, stdout: "", stderr: "" }
+      },
+      analyze: async () => ({
+        intents: [{ files: ["new/icon.png"], description: "move icon" }],
+      }),
+      generate: async () => ({ message: "refactor: 移动 icon" }),
+      output: () => {},
+      error: () => {},
+      exit: () => {},
+      style,
+    })
+
+    expect(calls).toContain("add old/icon.png new/icon.png")
+    expect(calls.some((call) => call.includes("->"))).toBe(false)
+    expect(calls).toContain("commit -m refactor: 移动 icon")
+  })
+
+  test("commits staged renames in a real git repo", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await Bun.write(path.join(tmp.path, "old/icon.png"), "icon\n")
+    await $`git add old/icon.png`.cwd(tmp.path).quiet()
+    await $`git commit -m init`.cwd(tmp.path).quiet()
+    await $`mkdir -p new`.cwd(tmp.path).quiet()
+    await $`git mv old/icon.png new/icon.png`.cwd(tmp.path).quiet()
+
+    const calls: string[] = []
+    await handleFastCommit({
+      dir: tmp.path,
+      generate: async () => ({ message: "refactor: 移动 icon" }),
+      analyze: async (input) => ({
+        intents: [{ files: input.selectedFiles, description: "move icon" }],
+      }),
+      git: (args, cwd) => {
+        calls.push(args.join(" "))
+        const result = Bun.spawnSync(["git", ...args], {
+          cwd,
+          stdout: "pipe",
+          stderr: "pipe",
+          windowsHide: true,
+        })
+        return {
+          code: result.exitCode,
+          stdout: result.stdout.toString(),
+          stderr: result.stderr.toString(),
+        }
+      },
+      output: () => {},
+      error: () => {},
+      exit: () => {},
+      style,
+    })
+
+    expect(calls.some((call) => call.includes("->"))).toBe(false)
+    expect(calls).toContain("add old/icon.png new/icon.png")
+    const status = await $`git status --porcelain`.cwd(tmp.path).quiet().text()
+    expect(status.trim()).toBe("")
+  })
+
   test("briefLockMessage formats single and multiple lock files", () => {
     expect(briefLockMessage(["bun.lock"])).toBe("chore(deps): 更新 bun.lock")
     expect(briefLockMessage(["bun.lock", "pnpm-lock.yaml"])).toBe("chore(deps): 更新依赖锁文件")

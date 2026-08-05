@@ -9,6 +9,8 @@ describe("fast-commit ui", () => {
       staged: ["a.ts"],
       unstaged: ["b.ts"],
       untracked: [],
+      related: [],
+      renames: {},
     })
 
     expect(text).toContain("⚡ fast-commit")

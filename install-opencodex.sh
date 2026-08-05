@@ -9,11 +9,16 @@ LINK_TARGET="$HOME/bin/opencode"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--dev] [--with-web-ui]
+Usage: $(basename "$0") [--dev] [--with-web-ui] [--fetch-models] [--no-models-dev]
 
-  $(basename "$0")              Install production binary (current platform, no Web UI embed)
-  $(basename "$0") --dev        Install development build (runs TypeScript via bun)
+  $(basename "$0")                Install production binary (current platform, no Web UI embed)
+  $(basename "$0") --dev          Install development build (runs TypeScript via bun)
   $(basename "$0") --with-web-ui  Also embed Web UI in the binary (slower, needs app build deps)
+  $(basename "$0") --fetch-models Download the models.dev catalog during build (default: local snapshot)
+  $(basename "$0") --no-models-dev  Embed an empty model catalog (for custom providers only)
+
+Environment:
+  MODELS_DEV_API_JSON  Path to a local models snapshot JSON (overrides --fetch-models / --no-models-dev)
 
 After changing source code:
   production: re-run $(basename "$0")
@@ -23,10 +28,14 @@ EOF
 
 DEV=0
 WITH_WEB_UI=0
+FETCH_MODELS=0
+NO_MODELS_DEV=0
 for arg in "$@"; do
   case "$arg" in
     --dev) DEV=1 ;;
     --with-web-ui) WITH_WEB_UI=1 ;;
+    --fetch-models) FETCH_MODELS=1 ;;
+    --no-models-dev) NO_MODELS_DEV=1 ;;
     --skip-embed-web-ui) ;;
     -h | --help)
       usage
@@ -39,6 +48,42 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ "$FETCH_MODELS" -eq 1 ] && [ "$NO_MODELS_DEV" -eq 1 ]; then
+  echo "Use only one of --fetch-models or --no-models-dev" >&2
+  exit 1
+fi
+
+resolve_models_snapshot() {
+  if [ -n "${MODELS_DEV_API_JSON:-}" ]; then
+    if [ ! -f "$MODELS_DEV_API_JSON" ]; then
+      echo "MODELS_DEV_API_JSON does not exist: $MODELS_DEV_API_JSON" >&2
+      exit 1
+    fi
+    echo "$MODELS_DEV_API_JSON"
+    return
+  fi
+
+  if [ "$FETCH_MODELS" -eq 1 ]; then
+    return
+  fi
+
+  if [ "$NO_MODELS_DEV" -eq 1 ]; then
+    local empty="$OPENCODE_DIR/.cache/empty-models.json"
+    mkdir -p "$(dirname "$empty")"
+    printf '{}\n' >"$empty"
+    echo "$empty"
+    return
+  fi
+
+  local fixture="$OPENCODE_DIR/test/tool/fixtures/models-api.json"
+  if [ ! -f "$fixture" ]; then
+    echo "Local models snapshot not found: $fixture" >&2
+    echo "Use --fetch-models or set MODELS_DEV_API_JSON" >&2
+    exit 1
+  fi
+  echo "$fixture"
+}
 
 resolve_binary_name() {
   local platform arch
@@ -85,7 +130,17 @@ else
   if [ "$WITH_WEB_UI" -eq 0 ]; then
     BUILD_ARGS+=(--skip-embed-web-ui)
   fi
-  echo "==> Building production binary (current platform)..."
+  MODELS_SNAPSHOT="$(resolve_models_snapshot)"
+  if [ -n "$MODELS_SNAPSHOT" ]; then
+    export MODELS_DEV_API_JSON="$MODELS_SNAPSHOT"
+    if [ "$NO_MODELS_DEV" -eq 1 ]; then
+      echo "==> Building production binary (current platform, empty model catalog)..."
+    else
+      echo "==> Building production binary (current platform, local models snapshot)..."
+    fi
+  else
+    echo "==> Building production binary (current platform, fetching models.dev)..."
+  fi
   (cd "$OPENCODE_DIR" && bun run build -- "${BUILD_ARGS[@]}")
 
   BINARY_NAME="$(resolve_binary_name)"

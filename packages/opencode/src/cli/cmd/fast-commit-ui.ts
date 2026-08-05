@@ -5,6 +5,8 @@ export type Status = {
   staged: string[]
   unstaged: string[]
   untracked: string[]
+  related: string[]
+  renames: Record<string, string[]>
 }
 
 const SEP_WIDTH = 44
