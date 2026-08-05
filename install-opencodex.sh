@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 OPENCODE_DIR="$ROOT/packages/opencode"
 BIN_DEV="$OPENCODE_DIR/bin/opencode-dev"
 BIN_PROD="$OPENCODE_DIR/bin/opencode-local"
-LINK_TARGET="$HOME/bin/opencode"
+LINK_TARGETS=("$HOME/bin/ocx" "$HOME/bin/opencodex")
 
 usage() {
   cat <<EOF
@@ -22,7 +22,7 @@ Environment:
 
 After changing source code:
   production: re-run $(basename "$0")
-  development: run oc directly (no reinstall needed)
+   development: run ocx directly (no reinstall needed)
 EOF
 }
 
@@ -161,28 +161,32 @@ WRAPPER
   MODE="production"
 fi
 
-echo "==> Linking opencode command..."
+echo "==> Linking ocx and opencodex commands..."
 mkdir -p ~/bin
-ln -sf "$BIN_SRC" "$LINK_TARGET"
-ln -sf "$BIN_SRC" "$HOME/bin/oc"
+for target in "${LINK_TARGETS[@]}"; do
+  ln -sf "$BIN_SRC" "$target"
+done
 
 export PATH="$HOME/bin:$PATH"
 
-echo "==> Testing opencode..."
-VERSION=$(opencode --version 2>&1)
-echo "    opencode --version => $VERSION"
+echo "==> Testing ocx..."
+VERSION=$(ocx --version 2>&1)
+echo "    ocx --version => $VERSION"
 
 echo ""
-echo "✅ opencode installed successfully! ($MODE mode)"
-echo "   Command: opencode | oc  (ensure ~/bin is in PATH)"
-echo "   Link:    $LINK_TARGET -> $BIN_SRC"
+echo "✅ ocx installed successfully! ($MODE mode)"
+echo "   Commands: ocx, opencodex  (ensure ~/bin is in PATH)"
+echo "   Links:"
+for target in "${LINK_TARGETS[@]}"; do
+  echo "     $target -> $BIN_SRC"
+done
 if [ "$DEV" -eq 1 ]; then
   echo "   Tip: code changes take effect immediately; reinstall only when dependencies change"
 else
-  echo "   Tip: re-run ./install-opencode.sh after code changes to refresh the binary"
-  echo "   Tip: use ./install-opencode.sh --dev for live TypeScript development"
+  echo "   Tip: re-run ./install-opencodex.sh after code changes to refresh the binary"
+  echo "   Tip: use ./install-opencodex.sh --dev for live TypeScript development"
   if [ "$WITH_WEB_UI" -eq 0 ]; then
-    echo "   Tip: use ./install-opencode.sh --with-web-ui if you need the embedded Web UI server"
+    echo "   Tip: use ./install-opencodex.sh --with-web-ui if you need the embedded Web UI server"
   fi
 fi
-echo "   Run 'oc' or 'opencode' to start TUI"
+echo "   Run 'ocx' to start TUI"

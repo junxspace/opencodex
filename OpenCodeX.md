@@ -18,15 +18,15 @@
 
 ## 1. 本地安装与开发环境
 
-新增根目录脚本 `install-opencode.sh`，一键完成开发环境搭建：
+新增根目录脚本 `install-opencodex.sh`，一键完成开发环境搭建：
 
 - 执行 `bun install --ignore-scripts` 安装依赖
 - 生成 `packages/opencode/bin/opencode-dev` 包装脚本，启动前设置 `OPENCODE_ORIG_CWD` 为调用时的工作目录
-- 在 `~/bin` 创建 `opencode` 与 `oc` 软链接
+- 在 `~/bin` 创建 `ocx` 软链接
 
 ```bash
-./install-opencode.sh
-opencode   # 或 oc
+./install-opencodex.sh
+ocx
 ```
 
 开发版本号格式为 `dev-{version}+{sha}`（见 `packages/core/src/installation/source-version.ts`），便于区分源码构建与发布版本。
