@@ -8,8 +8,6 @@ export type { TokenUsage, TokenUsageWindow }
 
 const BAR_WIDTH = 16
 const DEFAULT_REFRESH_SECONDS = 60
-const SWEEP_DURATION_MS = 1500
-const SWEEP_TICK_MS = 90
 
 function formatRelative(timestampMs: number, now: number): string {
   if (!Number.isFinite(timestampMs)) return ""
@@ -73,34 +71,6 @@ export function TokenUsageSidebar() {
     onCleanup(() => clearInterval(interval))
   })
 
-  const [sweepStart, setSweepStart] = createSignal<number | null>(null)
-  const [sweepPos, setSweepPos] = createSignal(-1)
-  let sweepTimer: ReturnType<typeof setInterval> | undefined
-
-  onMount(() => {
-    sweepTimer = setInterval(() => {
-      const start = sweepStart()
-      if (start === null) return
-      const elapsed = Date.now() - start
-      if (elapsed >= SWEEP_DURATION_MS) {
-        setSweepStart(null)
-        setSweepPos(-1)
-        return
-      }
-      const progress = elapsed / SWEEP_DURATION_MS
-      const pos = Math.min(BAR_WIDTH - 1, Math.floor(progress * BAR_WIDTH))
-      setSweepPos(pos)
-    }, SWEEP_TICK_MS)
-    onCleanup(() => {
-      if (sweepTimer) clearInterval(sweepTimer)
-    })
-  })
-
-  createEffect(() => {
-    if (usage() === undefined) return
-    setSweepStart(Date.now())
-  })
-
   createEffect(() => {
     const snapshot = usage()
     const id = providerID()
@@ -131,10 +101,10 @@ export function TokenUsageSidebar() {
           </b>
         </text>
         <Show when={value()?.five_hour}>
-          <UsageRow label="5H" window={value()!.five_hour!} now={now()} sweepPos={sweepPos()} />
+          <UsageRow label="5H" window={value()!.five_hour!} now={now()} />
         </Show>
         <Show when={value()?.weekly}>
-          <UsageRow label="WK" window={value()!.weekly!} now={now()} sweepPos={sweepPos()} />
+          <UsageRow label="WK" window={value()!.weekly!} now={now()} />
         </Show>
         <Show when={errorMessage()}>
           <text fg={theme.warning}>{`⚠ ${errorMessage()}`}</text>
@@ -144,7 +114,7 @@ export function TokenUsageSidebar() {
   )
 }
 
-function UsageRow(props: { label: string; window: TokenUsageWindow; now: number; sweepPos: number }) {
+function UsageRow(props: { label: string; window: TokenUsageWindow; now: number }) {
   const { theme } = useTheme()
   const bar = createMemo(() => renderBar(Number(props.window.used_percent)))
   const reset = createMemo(() => formatRelative(props.window.reset_at, props.now))
@@ -152,35 +122,13 @@ function UsageRow(props: { label: string; window: TokenUsageWindow; now: number;
     <box>
       <text wrapMode="none">
         <span style={{ fg: theme.textMuted }}>{props.label.padEnd(3, " ")}</span>{" "}
-        <SweepBar bar={bar()} theme={theme} sweepPos={props.sweepPos} />
+        <span style={{ fg: theme.text }}>{bar().filled}</span>
+        <span style={{ fg: theme.textMuted }}>{bar().empty}</span>
         <span style={{ fg: theme.text }}> {bar().label.padStart(4)}</span>
       </text>
       <text fg={theme.textMuted} wrapMode="none">
         {"    "}Reset at {reset()}
       </text>
     </box>
-  )
-}
-
-function SweepBar(props: { bar: { filled: string; empty: string; label: string }; theme: ReturnType<typeof useTheme>["theme"]; sweepPos: number }) {
-  const filled = props.bar.filled
-  if (props.sweepPos < 0 || props.sweepPos >= filled.length) {
-    return (
-      <>
-        <span style={{ fg: props.theme.text }}>{filled}</span>
-        <span style={{ fg: props.theme.textMuted }}>{props.bar.empty}</span>
-      </>
-    )
-  }
-  const head = filled.slice(0, props.sweepPos)
-  const highlight = filled.charAt(props.sweepPos)
-  const tail = filled.slice(props.sweepPos + 1)
-  return (
-    <>
-      <span style={{ fg: props.theme.text }}>{head}</span>
-      <span style={{ fg: props.theme.background, bg: props.theme.accent }}>{highlight}</span>
-      <span style={{ fg: props.theme.text }}>{tail}</span>
-      <span style={{ fg: props.theme.textMuted }}>{props.bar.empty}</span>
-    </>
   )
 }
