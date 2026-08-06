@@ -247,6 +247,10 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   out(ui.intentPlan(intents.length))
 
   const gen = args.generate ?? generateCommitMessage
+  const initialMessages = await Promise.all(
+    intents.map((intent) => initialMessage(intent, gen, args, root)),
+  )
+
   let commitCount = 0
   for (const [index, intent] of intents.entries()) {
     args.onProgress?.(index + 1, intents.length, intent)
@@ -263,7 +267,7 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
       if (!check(result, error, exit)) return bail(commitCount)
     }
 
-    const resolved = await resolveMessage(intent, index + 1, intents.length, args, gen, root, ui, out)
+    const resolved = await resolveMessage(intent, index + 1, intents.length, initialMessages[index]!, args, gen, root, ui, out)
     if (resolved === null) {
       out(ui.info("Cancelled"))
       return bail(commitCount)
@@ -306,43 +310,51 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   return { commitCount, pushed, pushFailed: pushFailed && !pushed }
 }
 
+async function initialMessage(
+  intent: CommitIntent,
+  gen: typeof generateCommitMessage,
+  args: Args,
+  root: string,
+): Promise<string> {
+  const error = args.error ?? UI.error
+  const exit = args.exit ?? ((code: number) => (process.exitCode = code))
+  const locked = messageForIntent(intent, args.lockTemplate)
+  if (locked) return locked
+  const generated = (
+    await gen({
+      path: root,
+      selectedFiles: nonLockFiles(intent.files),
+      previousMessage: args.previous,
+      prompt: args.prompt,
+      model: args.model,
+      instance: args.instance,
+      intent: { files: intent.files, description: intent.description },
+    })
+  ).message
+  if (!generated?.trim()) {
+    error("Commit message is empty")
+    exit(1)
+    return ""
+  }
+  return generated
+}
+
 async function resolveMessage(
   intent: CommitIntent,
   index: number,
   total: number,
+  initial: string,
   args: Args,
   gen: typeof generateCommitMessage,
   root: string,
   ui: FastCommitUi,
   out: (text: string) => void,
 ): Promise<string | null> {
-  const error = args.error ?? UI.error
-  const exit = args.exit ?? ((code: number) => (process.exitCode = code))
-  let msg = messageForIntent(intent, args.lockTemplate)
+  if (!initial.trim()) return null
+  if (!args.confirm) return initial
+
+  let msg = initial
   let prev = args.previous
-
-  if (!msg) {
-    msg = (
-      await gen({
-        path: root,
-        selectedFiles: nonLockFiles(intent.files),
-        previousMessage: prev,
-        prompt: args.prompt,
-        model: args.model,
-        instance: args.instance,
-        intent: { files: intent.files, description: intent.description },
-      })
-    ).message
-  }
-
-  if (!msg?.trim()) {
-    error("Commit message is empty")
-    exit(1)
-    return null
-  }
-
-  if (!args.confirm) return msg
-
   while (true) {
     out("")
     out(ui.commitMessageBlock(msg))
