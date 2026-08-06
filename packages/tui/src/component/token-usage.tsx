@@ -101,6 +101,21 @@ export function TokenUsageSidebar() {
     setSweepStart(Date.now())
   })
 
+  createEffect(() => {
+    const snapshot = usage()
+    const id = providerID()
+    if (!snapshot || !id) return
+    const future = [snapshot.five_hour?.reset_at, snapshot.weekly?.reset_at]
+      .filter((t): t is number => Number.isFinite(t))
+      .filter((t) => t > Date.now())
+    if (future.length === 0) return
+    const nextReset = Math.min(...future)
+    const timer = setTimeout(() => {
+      void sdk.client.tokenUsage.refresh({ providerID: id }).then(() => refetch())
+    }, nextReset - Date.now() + 100)
+    onCleanup(() => clearTimeout(timer))
+  })
+
   const value = createMemo(() => usage() ?? null)
   const errorMessage = createMemo(() => value()?.error)
   const visible = createMemo(

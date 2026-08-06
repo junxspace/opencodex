@@ -200,6 +200,43 @@ describe("fast-commit", () => {
     expect(commits).toEqual(["feat: 添加 api", "docs: 更新 readme"])
   })
 
+  test("generates intent messages in parallel", async () => {
+    const starts: number[] = []
+    const peak = { value: 0 }
+    let active = 0
+    const generate = async (input: { intent?: { files: string[] } }) => {
+      active += 1
+      peak.value = Math.max(peak.value, active)
+      starts.push(Date.now())
+      await new Promise((r) => setTimeout(r, 20))
+      active -= 1
+      return { message: input.intent?.files[0] ? `msg: ${input.intent.files[0]}` : "msg" }
+    }
+
+    await handleFastCommit({
+      dir: "/repo",
+      generate,
+      analyze: async () => ({
+        intents: [
+          { files: ["src/a.ts"], description: "a" },
+          { files: ["src/b.ts"], description: "b" },
+          { files: ["src/c.ts"], description: "c" },
+        ],
+      }),
+      git: (args) => {
+        if (args.join(" ") === "status --porcelain") return { code: 0, stdout: "?? src/a.ts\n?? src/b.ts\n?? src/c.ts\n", stderr: "" }
+        if (args.join(" ") === "diff --cached --quiet") return { code: 1, stdout: "", stderr: "" }
+        return { code: 0, stdout: "", stderr: "" }
+      },
+      output: () => {},
+      error: () => {},
+      exit: () => {},
+      style,
+    })
+
+    expect(peak.value).toBe(3)
+  })
+
   test("suggests push after commits without push flag", async () => {
     await using tmp = await tmpdir({
       git: true,
