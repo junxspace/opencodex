@@ -29,7 +29,7 @@ import { StartupTrace } from "@opencode-ai/core/util/startup-trace"
 import { createSimpleContext } from "./helper"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, onCleanup, onMount } from "solid-js"
 import path from "path"
 import { useKV } from "./kv"
 import { shouldPreferHydratedToolPart } from "../util/session"
@@ -171,6 +171,18 @@ export const {
     function refreshMcp(workspace: string | undefined) {
       return sdk.client.mcp.status(workspace ? { workspace } : {}).then((x) => {
         if (x.data) setStore("mcp", reconcile(x.data))
+      })
+    }
+
+    function refreshLsp(workspace: string | undefined) {
+      return sdk.client.lsp.status(workspace ? { workspace } : {}).then((x) => {
+        if (x.data) setStore("lsp", reconcile(x.data))
+      })
+    }
+
+    function refreshFormatter(workspace: string | undefined) {
+      return sdk.client.formatter.status(workspace ? { workspace } : {}).then((x) => {
+        if (x.data) setStore("formatter", reconcile(x.data))
       })
     }
 
@@ -662,6 +674,36 @@ export const {
 
     onMount(() => {
       void bootstrap()
+
+      // Safety net for status drift: if the TUI's local store has any
+      // entries but the connected server has lost them (server reload, TUI
+      // connected to a different server instance than the one that originally
+      // reported, server process killed without publishing
+      // permission.replied / session.status / lsp.updated / mcp.tools.changed
+      // / formatter events), the user can be left with `disabled() === true`,
+      // a session that spins forever in the list, or an LSP/MCP/formatter
+      // panel that claims "connected" against a dead process. Re-validate
+      // periodically so everything self-heals. Skip the calls entirely when
+      // the local store is empty — the reconcile would be a no-op and we
+      // don't want a steady 30s baseline of list calls.
+      const driftTimer = setInterval(() => {
+        const workspace = project.workspace.current()
+        const hasPermission = Object.values(store.permission).some((arr) => arr.length > 0)
+        const hasQuestion = Object.values(store.question).some((arr) => arr.length > 0)
+        const hasWorkingStatus = Object.values(store.session_status).some(
+          (s) => s?.type === "busy" || s?.type === "retry",
+        )
+        const hasLsp = store.lsp.length > 0
+        const hasMcp = Object.keys(store.mcp).length > 0
+        const hasFormatter = store.formatter.length > 0
+        if (!hasPermission && !hasQuestion && !hasWorkingStatus && !hasLsp && !hasMcp && !hasFormatter) return
+        if (hasPermission || hasQuestion) void refreshPendingPrompts()
+        if (hasWorkingStatus) void refreshSessionStatus()
+        if (hasLsp) void refreshLsp(workspace)
+        if (hasMcp) void refreshMcp(workspace)
+        if (hasFormatter) void refreshFormatter(workspace)
+      }, 30_000)
+      onCleanup(() => clearInterval(driftTimer))
     })
 
     const result = {

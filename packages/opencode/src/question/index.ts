@@ -1,4 +1,7 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { AbsolutePath } from "@opencode-ai/core/schema"
+import { Location } from "@opencode-ai/core/location"
+import { Project } from "@opencode-ai/core/project"
 import { Deferred, Effect, Layer, Schema, Context } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { SessionID, MessageID } from "@/session/schema"
@@ -132,14 +135,28 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
     const state = yield* InstanceState.make<State>(
-      Effect.fn("Question.state")(function* () {
+      Effect.fn("Question.state")(function* (ctx) {
         const state = {
           pending: new Map<QuestionID, PendingEntry>(),
         }
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
-            for (const item of state.pending.values()) {
+            // Same reasoning as Permission.state: publish question.rejected
+            // for every pending request with the location captured at init,
+            // so the TUI's sync.data.question can drop them after a reload
+            // or directory switch. The finalizer runs after InstanceRef is
+            // gone, so EventV2Bridge.publish would otherwise emit without a
+            // location and the SSE handler would drop the event.
+            if (state.pending.size === 0) return
+            const location = new Location.Info({
+              directory: AbsolutePath.make(ctx.directory),
+              project: { id: Project.ID.make(ctx.project.id), directory: AbsolutePath.make(ctx.worktree) },
+            })
+            for (const [id, item] of state.pending.entries()) {
+              yield* events
+                .publish(Event.Rejected, { sessionID: item.info.sessionID, requestID: id }, { location })
+                .pipe(Effect.catch(() => Effect.void))
               yield* Deferred.fail(item.deferred, new RejectedError())
             }
             state.pending.clear()

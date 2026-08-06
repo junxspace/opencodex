@@ -2,6 +2,9 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
 import { InstanceState } from "@/effect/instance-state"
 import { Wildcard } from "@opencode-ai/core/util/wildcard"
+import { AbsolutePath } from "@opencode-ai/core/schema"
+import { Location } from "@opencode-ai/core/location"
+import { Project } from "@opencode-ai/core/project"
 import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
@@ -56,7 +59,6 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
-        void ctx
         const state = {
           pending: new Map<PermissionV1.ID, PendingEntry>(),
           approved: [],
@@ -64,7 +66,33 @@ export const layer = Layer.effect(
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
-            for (const item of state.pending.values()) {
+            // Publish permission.replied for every pending request so the
+            // TUI's local store can drop them. InstanceRef is already gone
+            // by the time the finalizer runs, so we must pin the location
+            // captured at init time — otherwise the SSE handler filters the
+            // event out (see server/routes/instance/httpapi/handlers/event.ts
+            // and the directory/workspace filter on the event stream).
+            //
+            // Reply is `reject` because the schema only allows "once" /
+            // "always" / "reject" and the closest semantic match for
+            // "server-forced teardown" is "reject" (it also fails the
+            // awaiting tool call). TUI's `permission.replied` handler
+            // doesn't differentiate by reply value, so this is safe; if
+            // future code wants to distinguish user-reject from server-
+            // teardown, add a new reply literal instead of overloading one.
+            if (state.pending.size === 0) return
+            const location = new Location.Info({
+              directory: AbsolutePath.make(ctx.directory),
+              project: { id: Project.ID.make(ctx.project.id), directory: AbsolutePath.make(ctx.worktree) },
+            })
+            for (const [id, item] of state.pending.entries()) {
+              yield* events
+                .publish(
+                  Event.Replied,
+                  { sessionID: item.info.sessionID, requestID: id, reply: "reject" },
+                  { location },
+                )
+                .pipe(Effect.catch(() => Effect.void))
               yield* Deferred.fail(item.deferred, new PermissionV1.RejectedError())
             }
             state.pending.clear()

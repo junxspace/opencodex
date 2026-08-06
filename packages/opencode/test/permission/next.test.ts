@@ -1,7 +1,7 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { test, expect } from "bun:test"
 import os from "os"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Queue } from "effect"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Database } from "@opencode-ai/core/database/database"
@@ -1060,6 +1060,103 @@ it.instance(
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "pending permission publishes permission.replied on instance dispose",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const store = yield* InstanceStore.Service
+      const events = yield* EventV2Bridge.Service
+      const seen = yield* Queue.unbounded<{
+        requestID: PermissionV1.ID
+        sessionID: SessionID
+        reply: PermissionV1.Reply
+      }>()
+      const off = yield* events.listen((event) => {
+        if (event.type === Permission.Event.Replied.type) {
+          const data = event.data as {
+            requestID: PermissionV1.ID
+            sessionID: SessionID
+            reply: PermissionV1.Reply
+          }
+          Queue.offerUnsafe(seen, data)
+        }
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => off)
+
+      const requestID = PermissionV1.ID.make("per_event")
+      const sessionID = SessionID.make("session_event")
+      yield* ask({
+        id: requestID,
+        sessionID,
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      const ctx = yield* store.load({ directory: test.directory })
+      yield* store.dispose(ctx)
+
+      const event = yield* Queue.take(seen).pipe(Effect.timeout("2 seconds"))
+      expect(event.requestID).toBe(requestID)
+      expect(event.sessionID).toBe(sessionID)
+      expect(event.reply).toBe("reject")
+    }),
+  { git: true },
+)
+
+it.instance(
+  "pending permission publishes permission.replied on instance reload",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const store = yield* InstanceStore.Service
+      const events = yield* EventV2Bridge.Service
+      const seen = yield* Queue.unbounded<{
+        requestID: PermissionV1.ID
+        sessionID: SessionID
+        reply: PermissionV1.Reply
+      }>()
+      const off = yield* events.listen((event) => {
+        if (event.type === Permission.Event.Replied.type) {
+          const data = event.data as {
+            requestID: PermissionV1.ID
+            sessionID: SessionID
+            reply: PermissionV1.Reply
+          }
+          Queue.offerUnsafe(seen, data)
+        }
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => off)
+
+      const requestID = PermissionV1.ID.make("per_reload_event")
+      const sessionID = SessionID.make("session_reload_event")
+      yield* ask({
+        id: requestID,
+        sessionID,
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      yield* store.reload({ directory: test.directory })
+
+      const event = yield* Queue.take(seen).pipe(Effect.timeout("2 seconds"))
+      expect(event.requestID).toBe(requestID)
+      expect(event.sessionID).toBe(sessionID)
+      expect(event.reply).toBe("reject")
     }),
   { git: true },
 )

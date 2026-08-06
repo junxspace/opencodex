@@ -463,3 +463,79 @@ lifecycle.live("pending question rejects on instance reload", () =>
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
   }),
 )
+
+lifecycle.live("pending question publishes question.rejected on instance dispose", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped({ git: true })
+    const events = yield* EventV2Bridge.Service
+    const seen = yield* Queue.unbounded<{ requestID: QuestionID; sessionID: SessionID }>()
+    const off = yield* events.listen((event) => {
+      if (event.type === Question.Event.Rejected.type) {
+        const data = event.data as { requestID: QuestionID; sessionID: SessionID }
+        Queue.offerUnsafe(seen, data)
+      }
+      return Effect.void
+    })
+    yield* Effect.addFinalizer(() => off)
+
+    yield* askEffect({
+      sessionID: SessionID.make("ses_event"),
+      questions: [
+        {
+          question: "Event me?",
+          header: "Event",
+          options: [{ label: "Yes", description: "Yes" }],
+        },
+      ],
+    }).pipe(provideInstance(dir), Effect.forkScoped)
+
+    const pending = yield* waitForPending(1).pipe(provideInstance(dir))
+    const requestID = pending[0].id
+
+    const ctx = yield* Effect.gen(function* () {
+      return yield* InstanceRef
+    }).pipe(provideInstance(dir))
+    if (!ctx) return yield* Effect.die(new Error("missing test instance"))
+    yield* InstanceStore.Service.use((store) => store.dispose(ctx))
+
+    const event = yield* Queue.take(seen).pipe(Effect.timeout("2 seconds"))
+    expect(event.requestID).toBe(requestID)
+    expect(event.sessionID).toBe(SessionID.make("ses_event"))
+  }),
+)
+
+lifecycle.live("pending question publishes question.rejected on instance reload", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped({ git: true })
+    const events = yield* EventV2Bridge.Service
+    const seen = yield* Queue.unbounded<{ requestID: QuestionID; sessionID: SessionID }>()
+    const off = yield* events.listen((event) => {
+      if (event.type === Question.Event.Rejected.type) {
+        const data = event.data as { requestID: QuestionID; sessionID: SessionID }
+        Queue.offerUnsafe(seen, data)
+      }
+      return Effect.void
+    })
+    yield* Effect.addFinalizer(() => off)
+
+    yield* askEffect({
+      sessionID: SessionID.make("ses_reload_event"),
+      questions: [
+        {
+          question: "Reload event me?",
+          header: "ReloadEvent",
+          options: [{ label: "Yes", description: "Yes" }],
+        },
+      ],
+    }).pipe(provideInstance(dir), Effect.forkScoped)
+
+    const pending = yield* waitForPending(1).pipe(provideInstance(dir))
+    const requestID = pending[0].id
+
+    yield* InstanceStore.Service.use((store) => store.reload({ directory: dir }))
+
+    const event = yield* Queue.take(seen).pipe(Effect.timeout("2 seconds"))
+    expect(event.requestID).toBe(requestID)
+    expect(event.sessionID).toBe(SessionID.make("ses_reload_event"))
+  }),
+)
