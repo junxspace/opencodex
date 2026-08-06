@@ -201,6 +201,12 @@ export type FastCommitResult = {
   pushFailed: boolean
 }
 
+const bail = (commitCount = 0): FastCommitResult => ({
+  commitCount,
+  pushed: false,
+  pushFailed: false,
+})
+
 export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const root = invocationDirectory(args.dir)
   const run = args.git ?? git
@@ -209,7 +215,7 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const exit = args.exit ?? ((code: number) => (process.exitCode = code))
   const ui = commitUi(args.style ?? (await resolveCliStyle({ directory: root })))
   const statusResult = run(["status", "--porcelain"], root)
-  if (!check(statusResult, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
+  if (!check(statusResult, error, exit)) return bail()
 
   const status = parseStatus(statusResult.stdout)
   out(ui.statusOverview(status))
@@ -217,7 +223,7 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const committable = selectedFiles(status, args.stagedOnly)
   if (empty(status) || committable.length === 0) {
     out(ui.info("没有可提交的变更"))
-    return { commitCount: 0, pushed: false, pushFailed: false }
+    return bail()
   }
 
   const analysis = await (args.analyze ?? analyzeIntents)({
@@ -230,12 +236,12 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   const intents = analysis.intents.filter((intent) => intent.files.length > 0)
   if (intents.length === 0) {
     out(ui.info("没有可提交的变更"))
-    return { commitCount: 0, pushed: false, pushFailed: false }
+    return bail()
   }
 
   if (!args.dryRun) {
     const reset = run(["reset"], root)
-    if (!check(reset, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
+    if (!check(reset, error, exit)) return bail()
   }
 
   out(ui.intentPlan(intents.length))
@@ -249,96 +255,47 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     if (invalid.length > 0) {
       error(`Intent references files that are not changed: ${invalid.join(", ")}`)
       exit(1)
-      return { commitCount, pushed: false, pushFailed: false }
+      return bail(commitCount)
     }
 
     if (!args.dryRun) {
       const result = run(["add", ...pathsForIntentAdd(intent.files, status)], root)
-      if (!check(result, error, exit)) return { commitCount, pushed: false, pushFailed: false }
+      if (!check(result, error, exit)) return bail(commitCount)
     }
 
-    let msg = messageForIntent(intent, args.lockTemplate)
-    let prev = args.previous
-    if (!msg) {
-      const result = await gen({
-        path: root,
-        selectedFiles: nonLockFiles(intent.files),
-        previousMessage: prev,
-        prompt: args.prompt,
-        model: args.model,
-        instance: args.instance,
-        intent: { files: intent.files, description: intent.description },
-      })
-      msg = result.message
+    const resolved = await resolveMessage(intent, index + 1, intents.length, args, gen, root, ui, out)
+    if (resolved === null) {
+      out(ui.info("Cancelled"))
+      return bail(commitCount)
     }
-    if (!msg?.trim()) {
-      error("Commit message is empty")
+    const msg = resolved
+
+    if (args.dryRun) {
+      out("")
+      out(ui.commitMessageBlock(msg))
+      out(ui.warn("Dry run: commit not created"))
+      continue
+    }
+
+    if (!args.confirm) out(ui.intentHeader(index + 1, intents.length, msg, intent.files))
+
+    const diff = run(["diff", "--cached", "--quiet"], root)
+    if (diff.code === 0) {
+      error("No staged changes found")
       exit(1)
-      return { commitCount, pushed: false, pushFailed: false }
+      return bail(commitCount)
+    }
+    if (diff.code !== 1) {
+      check(diff, error, exit)
+      return bail(commitCount)
     }
 
-    while (true) {
-      if (args.dryRun) {
-        out("")
-        out(ui.commitMessageBlock(msg))
-        out(ui.warn("Dry run: commit not created"))
-        break
-      }
-
-      if (args.confirm) {
-        out("")
-        out(ui.commitMessageBlock(msg))
-        const action = await (args.selectAction ?? selectAction)(msg, intent, index + 1, intents.length)
-        if (action === "cancel") {
-          out(ui.info("Cancelled"))
-          return { commitCount, pushed: false, pushFailed: false }
-        }
-        if (action === "edit") {
-          const next = await (args.edit ?? edit)(msg)
-          if (!next) {
-            out(ui.info("Cancelled"))
-            return { commitCount, pushed: false, pushFailed: false }
-          }
-          msg = next
-          continue
-        }
-        if (action === "regenerate") {
-          prev = msg
-          const result = await gen({
-            path: root,
-            selectedFiles: nonLockFiles(intent.files),
-            previousMessage: prev,
-            prompt: args.prompt,
-            model: args.model,
-            instance: args.instance,
-            intent: { files: intent.files, description: intent.description },
-          })
-          msg = result.message
-          continue
-        }
-      }
-
-      if (!args.confirm) out(ui.intentHeader(index + 1, intents.length, msg, intent.files))
-
-      const diff = run(["diff", "--cached", "--quiet"], root)
-      if (diff.code === 0) {
-        error("No staged changes found")
-        exit(1)
-        return { commitCount, pushed: false, pushFailed: false }
-      }
-      if (diff.code !== 1) {
-        check(diff, error, exit)
-        return { commitCount, pushed: false, pushFailed: false }
-      }
-
-      const result = run(["commit", "-m", msg], root)
-      if (!check(result, error, exit)) return { commitCount, pushed: false, pushFailed: false }
-      const text = result.stdout.trim()
-      if (text) out(ui.gitCommitOutput(text))
-      if (!text) out(ui.committed(index + 1, intents.length))
-      commitCount++
-      break
-    }
+    const result = run(["commit", "-m", msg], root)
+    if (!check(result, error, exit)) return bail(commitCount)
+    const text = result.stdout.trim()
+    if (text) out(ui.gitCommitOutput(text))
+    if (!text) out(ui.committed(index + 1, intents.length))
+    commitCount++
   }
 
   const pushFailed = args.push === true && commitCount > 0
@@ -347,6 +304,74 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     out(ui.summary(commitCount, pushed ? "succeeded" : pushFailed ? "failed" : "skipped"))
   }
   return { commitCount, pushed, pushFailed: pushFailed && !pushed }
+}
+
+async function resolveMessage(
+  intent: CommitIntent,
+  index: number,
+  total: number,
+  args: Args,
+  gen: typeof generateCommitMessage,
+  root: string,
+  ui: FastCommitUi,
+  out: (text: string) => void,
+): Promise<string | null> {
+  const error = args.error ?? UI.error
+  const exit = args.exit ?? ((code: number) => (process.exitCode = code))
+  let msg = messageForIntent(intent, args.lockTemplate)
+  let prev = args.previous
+
+  if (!msg) {
+    msg = (
+      await gen({
+        path: root,
+        selectedFiles: nonLockFiles(intent.files),
+        previousMessage: prev,
+        prompt: args.prompt,
+        model: args.model,
+        instance: args.instance,
+        intent: { files: intent.files, description: intent.description },
+      })
+    ).message
+  }
+
+  if (!msg?.trim()) {
+    error("Commit message is empty")
+    exit(1)
+    return null
+  }
+
+  if (!args.confirm) return msg
+
+  while (true) {
+    out("")
+    out(ui.commitMessageBlock(msg))
+    const action = await (args.selectAction ?? selectAction)(msg, intent, index, total)
+    if (action === "commit") return msg
+    if (action === "cancel") return null
+    if (action === "edit") {
+      const next = await (args.edit ?? edit)(msg)
+      if (!next) return null
+      msg = next
+      continue
+    }
+    if (action === "regenerate") {
+      prev = msg
+      msg = (
+        await gen({
+          path: root,
+          selectedFiles: nonLockFiles(intent.files),
+          previousMessage: prev,
+          prompt: args.prompt,
+          model: args.model,
+          instance: args.instance,
+          intent: { files: intent.files, description: intent.description },
+        })
+      ).message
+      continue
+    }
+    return msg
+  }
 }
 
 function fastCommitBuilder(yargs: Argv) {
