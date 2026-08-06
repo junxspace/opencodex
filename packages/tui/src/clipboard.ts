@@ -29,19 +29,42 @@ function writeOsc52(text: string) {
 export async function read() {
   if (platform() === "darwin") {
     const file = path.join(tmpdir(), "opencode-clipboard.png")
+    const script = [
+      'try',
+      'set imageData to the clipboard as "PNGf"',
+      `set fileRef to open for access POSIX file "${file}" with write permission`,
+      "set eof fileRef to 0",
+      "write imageData to fileRef",
+      "close access fileRef",
+      'return "PNGf"',
+      "on error",
+      "end try",
+      'try',
+      'set imageData to the clipboard as "TIFF"',
+      `set fileRef to open for access POSIX file "${file}" with write permission`,
+      "set eof fileRef to 0",
+      "write imageData to fileRef",
+      "close access fileRef",
+      'return "TIFF"',
+      "on error",
+      "end try",
+      'try',
+      'set imageData to the clipboard as "JPEG"',
+      `set fileRef to open for access POSIX file "${file}" with write permission`,
+      "set eof fileRef to 0",
+      "write imageData to fileRef",
+      "close access fileRef",
+      'return "JPEG"',
+      "on error",
+      "end try",
+      'return ""',
+    ].join("\n")
     try {
-      await exec("osascript", [
-        "-e",
-        'set imageData to the clipboard as "PNGf"',
-        "-e",
-        `set fileRef to open for access POSIX file "${file}" with write permission`,
-        "-e",
-        "set eof fileRef to 0",
-        "-e",
-        "write imageData to fileRef",
-        "-e",
-        "close access fileRef",
-      ])
+      const result = (await exec("osascript", ["-e", script]).catch(() => Buffer.alloc(0))).toString().trim()
+      if (!result) throw new Error("no image in clipboard")
+      if (result !== "PNGf") {
+        await exec("sips", ["-s", "format", "png", file, "--out", file]).catch(() => undefined)
+      }
       return { data: (await readFile(file)).toString("base64"), mime: "image/png" }
     } catch {
       // Fall through to text clipboard.

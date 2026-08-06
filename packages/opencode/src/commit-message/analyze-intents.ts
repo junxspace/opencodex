@@ -143,7 +143,9 @@ export async function analyzeIntents(request: IntentAnalysisRequest): Promise<{ 
     intents = parseIntentJson(result, known)
     log.info("analyzed", { intents: intents.length })
   } catch (err) {
-    log.warn("intent analysis fallback", { error: err instanceof Error ? err.message : String(err) })
+    log.error("intent analysis failed, using single-intent fallback", {
+      error: err instanceof Error ? err.message : String(err),
+    })
     intents = [{ files: nonLocks, description: "related changes" }]
   } finally {
     clearTimeout(timer)

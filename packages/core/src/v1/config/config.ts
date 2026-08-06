@@ -16,6 +16,7 @@ import { ConfigPluginV1 } from "./plugin"
 import { ConfigProviderV1 } from "./provider"
 import { ConfigServerV1 } from "./server"
 import { ConfigSkillsV1 } from "./skills"
+import { ConfigTokenUsageV1 } from "./token-usage"
 import { CommitMessage } from "./commit-message"
 import { Notification } from "./notification"
 
@@ -117,6 +118,10 @@ export const Info = Schema.Struct({
   }),
   mcp_profiles: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))).annotate({
     description: "Named MCP server groups. Used with mcp_profile to limit which servers connect on startup.",
+  }),
+  token_usage: Schema.optional(Schema.Record(Schema.String, ConfigTokenUsageV1.Provider)).annotate({
+    description:
+      "Per-provider token-usage adapter configuration. Key is the provider ID; value is the adapter command and refresh options. Omit to disable the sidebar token-usage panel entirely.",
   }),
   formatter: Schema.optional(ConfigFormatterV1.Info).annotate({
     description:

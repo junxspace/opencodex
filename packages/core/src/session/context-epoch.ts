@@ -1,7 +1,7 @@
 export * as SessionContextEpoch from "./context-epoch"
 
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
-import { DateTime, Effect, Schema } from "effect"
+import { Cause, DateTime, Effect, Schema } from "effect"
 import { AgentV2 } from "../agent"
 import type { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -172,7 +172,11 @@ export const requestReplacement = Effect.fn("SessionContextEpoch.requestReplacem
       ),
     )
     .run()
-    .pipe(Effect.orDie)
+    .pipe(
+      Effect.catchCause((cause) =>
+        Effect.logError("requestReplacement failed", { sessionID, seq, cause: Cause.pretty(cause) }),
+      ),
+    )
 })
 
 export const reset = Effect.fn("SessionContextEpoch.reset")(function* (

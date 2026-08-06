@@ -220,11 +220,6 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
     return { commitCount: 0, pushed: false, pushFailed: false }
   }
 
-  const unstaged = run(["diff"], root)
-  if (!check(unstaged, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
-  const staged = run(["diff", "--staged"], root)
-  if (!check(staged, error, exit)) return { commitCount: 0, pushed: false, pushFailed: false }
-
   const analysis = await (args.analyze ?? analyzeIntents)({
     path: root,
     selectedFiles: committable,
@@ -246,7 +241,6 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
   out(ui.intentPlan(intents.length))
 
   const gen = args.generate ?? generateCommitMessage
-  let committed = false
   let commitCount = 0
   for (const [index, intent] of intents.entries()) {
     args.onProgress?.(index + 1, intents.length, intent)
@@ -342,13 +336,12 @@ export async function handleFastCommit(args: Args): Promise<FastCommitResult> {
       const text = result.stdout.trim()
       if (text) out(ui.gitCommitOutput(text))
       if (!text) out(ui.committed(index + 1, intents.length))
-      committed = true
       commitCount++
       break
     }
   }
 
-  const pushFailed = args.push === true && committed
+  const pushFailed = args.push === true && commitCount > 0
   const pushed = pushFailed ? runPush(run, root, out, error, exit, ui) : false
   if (commitCount > 0) {
     out(ui.summary(commitCount, pushed ? "succeeded" : pushFailed ? "failed" : "skipped"))

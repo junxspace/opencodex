@@ -1851,6 +1851,15 @@ export type McpRemoteConfig = {
   timeout?: number
 }
 
+export type TokenUsageProvider = {
+  /**
+   * Adapter command (argv array, no shell). Must print a single JSON object on stdout matching the TokenUsage schema.
+   */
+  command: Array<string>
+  refresh_interval?: number
+  timeout?: number
+}
+
 /**
  * @deprecated Always uses stretch layout.
  */
@@ -1947,6 +1956,9 @@ export type Config = {
   mcp_profile?: string
   mcp_profiles?: {
     [key: string]: Array<string>
+  }
+  token_usage?: {
+    [key: string]: TokenUsageProvider
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -2646,6 +2658,28 @@ export type SessionBusyError = {
   _tag: "SessionBusyError"
   sessionID: string
   message: string
+}
+
+export type TokenUsageWindow = {
+  used_percent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Epoch milliseconds (UTC) at which this window resets.
+   */
+  reset_at: number
+}
+
+export type TokenUsage = {
+  /**
+   * Provider ID this usage entry belongs to.
+   */
+  provider_id: string
+  /**
+   * Epoch milliseconds (UTC) when the adapter was last successfully invoked.
+   */
+  refreshed_at: number
+  five_hour?: TokenUsageWindow
+  weekly?: TokenUsageWindow
+  error?: string
 }
 
 export type EventTuiPromptAppend = {
@@ -8736,6 +8770,74 @@ export type SyncHistoryListResponses = {
 }
 
 export type SyncHistoryListResponse = SyncHistoryListResponses[keyof SyncHistoryListResponses]
+
+export type TokenUsageGetData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/token-usage/{providerID}"
+}
+
+export type TokenUsageGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * InternalServerError
+   */
+  500: EffectHttpApiErrorInternalServerError
+}
+
+export type TokenUsageGetError = TokenUsageGetErrors[keyof TokenUsageGetErrors]
+
+export type TokenUsageGetResponses = {
+  /**
+   * Token usage for the requested provider
+   */
+  200: TokenUsage
+}
+
+export type TokenUsageGetResponse = TokenUsageGetResponses[keyof TokenUsageGetResponses]
+
+export type TokenUsageRefreshData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/token-usage/{providerID}/refresh"
+}
+
+export type TokenUsageRefreshErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * InternalServerError
+   */
+  500: EffectHttpApiErrorInternalServerError
+}
+
+export type TokenUsageRefreshError = TokenUsageRefreshErrors[keyof TokenUsageRefreshErrors]
+
+export type TokenUsageRefreshResponses = {
+  /**
+   * Refreshed token usage
+   */
+  200: TokenUsage
+}
+
+export type TokenUsageRefreshResponse = TokenUsageRefreshResponses[keyof TokenUsageRefreshResponses]
 
 export type TuiAppendPromptData = {
   body?: {

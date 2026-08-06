@@ -231,6 +231,10 @@ import type {
   SyncStealErrors,
   SyncStealResponses,
   TextPartInput,
+  TokenUsageGetErrors,
+  TokenUsageGetResponses,
+  TokenUsageRefreshErrors,
+  TokenUsageRefreshResponses,
   ToolIdsErrors,
   ToolIdsResponses,
   ToolListErrors,
@@ -4595,6 +4599,72 @@ export class Sync extends HeyApiClient {
   }
 }
 
+export class TokenUsage extends HeyApiClient {
+  /**
+   * Get token usage
+   *
+   * Return the most recent cached token-usage snapshot for the given provider. Returns null when no adapter is configured.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<TokenUsageGetResponses, TokenUsageGetErrors, ThrowOnError>({
+      url: "/token-usage/{providerID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Refresh token usage
+   *
+   * Force a refresh of the cached token-usage snapshot for the given provider by re-running its configured adapter command.
+   */
+  public refresh<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<TokenUsageRefreshResponses, TokenUsageRefreshErrors, ThrowOnError>({
+      url: "/token-usage/{providerID}/refresh",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Control extends HeyApiClient {
   /**
    * Get next TUI request
@@ -6944,6 +7014,11 @@ export class OpencodeClient extends HeyApiClient {
   private _sync?: Sync
   get sync(): Sync {
     return (this._sync ??= new Sync({ client: this.client }))
+  }
+
+  private _tokenUsage?: TokenUsage
+  get tokenUsage(): TokenUsage {
+    return (this._tokenUsage ??= new TokenUsage({ client: this.client }))
   }
 
   private _tui?: Tui

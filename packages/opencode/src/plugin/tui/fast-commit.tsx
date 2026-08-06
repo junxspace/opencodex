@@ -23,6 +23,13 @@ type Item = {
 const id = "internal:opencode-fast-commit"
 
 function message(err: unknown) {
+  if (err && typeof err === "object" && "_tag" in err) {
+    const fields = Object.entries(err as Record<string, unknown>)
+      .filter(([k]) => k !== "_tag" && k !== "stack")
+      .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
+      .join(" ")
+    return fields ? `${err._tag}: ${fields}` : String(err._tag)
+  }
   if (err instanceof Error) return err.message
   return String(err)
 }
@@ -195,8 +202,9 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
             errors.push(text)
           },
           exit: () => {},
-          onProgress: (current, total) => {
-            api.ui.toast({ variant: "info", message: `正在提交 ${current}/${total}`, duration: 120_000 })
+          onProgress: (current, total, intent) => {
+            const desc = intent.description ? ` · ${intent.description}` : ""
+            api.ui.toast({ variant: "info", message: `正在提交 ${current}/${total}${desc}`, duration: 120_000 })
           },
           selectAction: (msg, intent, index, total) => select(api, msg, intent, index, total),
           edit: (msg) =>
