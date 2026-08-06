@@ -147,6 +147,7 @@ function select(api: TuiPluginApi, msg: string, intent: CommitIntent, index: num
   ]
   return new Promise<Action>((resolve) => {
     let done = false
+    api.ui.dialog.setSize("xlarge")
     api.ui.dialog.replace(
       () =>
         api.ui.DialogSelect({
@@ -164,8 +165,9 @@ function select(api: TuiPluginApi, msg: string, intent: CommitIntent, index: num
         resolve("cancel")
       },
     )
-    const files = intent.files.length ? `\nFiles: ${intent.files.join(", ")}` : ""
-    api.ui.toast({ variant: "info", message: `Commit message: ${msg.split("\n")[0]}${files}`, duration: 10_000 })
+    const subject = msg.split("\n")[0] ?? msg
+    const files = intent.files.length ? ` · ${intent.files.join(", ")}` : ""
+    api.ui.toast({ variant: "info", message: `${subject}${files}`, duration: 10_000 })
   })
 }
 
@@ -180,7 +182,7 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
     lines.push(text)
   }
 
-  api.ui.toast({ variant: "info", message: `正在执行 ${title}...`, duration: 120_000 })
+  api.ui.toast({ variant: "info", message: `正在执行 ${title}...`, duration: 60_000 })
 
   let result: FastCommitResult = { commitCount: 0, pushed: false, pushFailed: false }
 
@@ -204,7 +206,7 @@ async function run(api: TuiPluginApi, push: boolean, confirm: boolean) {
           exit: () => {},
           onProgress: (current, total, intent) => {
             const desc = intent.description ? ` · ${intent.description}` : ""
-            api.ui.toast({ variant: "info", message: `正在提交 ${current}/${total}${desc}`, duration: 120_000 })
+            api.ui.toast({ variant: "info", message: `正在提交 ${current}/${total}${desc}`, duration: 60_000 })
           },
           selectAction: (msg, intent, index, total) => select(api, msg, intent, index, total),
           edit: (msg) =>
@@ -255,20 +257,18 @@ function register(api: TuiPluginApi, name: string, title: string, slashName: str
         namespace: "palette",
         slashName,
         enabled: () => !busy(),
-        run() {
-          if (busy()) return
-          setBusy(true)
-          void run(api, push, false)
-            .then(() => {
-              api.ui.dialog.clear()
-            })
-            .catch((err) => {
-              void alert(api, "Fast commit failed", message(err))
-            })
-            .finally(() => {
-              setBusy(false)
-            })
-        },
+run() {
+            if (busy()) return
+            setBusy(true)
+            void run(api, push, false)
+              .catch((err) => {
+                api.ui.toast({ variant: "error", message: message(err), duration: 8000 })
+                void alert(api, "Fast commit failed", message(err))
+              })
+              .finally(() => {
+                setBusy(false)
+              })
+          },
       },
     ],
     bindings: api.tuiConfig.keybinds.gather(name, [name]),
